@@ -1,0 +1,93 @@
+<!-- ------------ Frontend (templates/map.html) ------------ -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Карта сотрудников</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        #map { height: 600px; }
+        .refresh-control {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="refresh-control">
+        Автообновление: <input type="checkbox" id="autoRefresh" checked> 
+        <span id="lastUpdate"></span>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        let map;
+        let markers = [];
+        
+        // Инициализация карты
+        function initMap() {
+            map = L.map('map').setView([55.7558, 37.6173], 4);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            updateData();
+        }
+
+        // Обновление данных на карте
+        async function updateData() {
+            try {
+                const response = await fetch('/map-data');
+                const data = await response.json();
+                
+                // Удаляем старые маркеры
+                markers.forEach(marker => map.removeLayer(marker));
+                markers = [];
+                
+                // Добавляем новые маркеры
+                data.features.forEach(feature => {
+                    const { city, count, size } = feature.properties;
+                    const [lon, lat] = feature.geometry.coordinates;
+                    
+                    const marker = L.circleMarker([lat, lon], {
+                        radius: size,
+                        color: '#3388ff',
+                        fillColor: '#3388ff',
+                        fillOpacity: 0.5
+                    })
+                    .bindPopup(`<b>${city}</b><br>Сотрудников: ${count}`)
+                    .addTo(map);
+                    
+                    markers.push(marker);
+                });
+                
+                document.getElementById('lastUpdate').textContent = 
+                    `Последнее обновление: ${new Date().toLocaleTimeString()}`;
+            } catch (error) {
+                console.error('Ошибка обновления данных:', error);
+            }
+        }
+
+        // Автоматическое обновление каждые 5 минут
+        let updateInterval;
+        document.getElementById('autoRefresh').addEventListener('change', function(e) {
+            if(e.target.checked) {
+                updateInterval = setInterval(updateData, 300000); // 5 минут
+            } else {
+                clearInterval(updateInterval);
+            }
+        });
+
+        // Инициализация при загрузке
+        window.onload = initMap;
+        setInterval(updateData, 300000); // Первое автоматическое обновление
+    </script>
+</body>
+</html>
