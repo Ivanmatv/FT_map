@@ -14,8 +14,8 @@ logger = get_logger()
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-REDMINE_URL = "https://tasks.fut.ru"
-API_KEY = "3ad93a967ae50a9d50072d628e8b97ee0002bf7d"
+REDMINE_URL = "https://www.redmine.org"
+API_KEY = "d18da853ad9642a79a69ce90b42b8089fc0ab941"
 CITY_FIELD_NAME = "city"
 
 # Кэш координат городов
