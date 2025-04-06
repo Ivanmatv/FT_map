@@ -5,7 +5,27 @@
     <title>Карта сотрудников</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <style>
-        #map { height: 600px; }
+        #map { height: 600px; width: 75%; float: left; }
+        #sidebar {
+            width: 25%;
+            height: 600px;
+            overflow-y: auto;
+            background-color: #f4f4f4;
+            padding: 15px;
+            float: left;
+            box-sizing: border-box;
+            border-left: 2px solid #ccc;
+        }
+        .employee-info {
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background-color: #fff;
+            border-radius: 5px;
+        }
+        .employee-info b {
+            font-size: 16px;
+        }
         .refresh-control {
             position: absolute;
             top: 10px;
@@ -19,7 +39,18 @@
     </style>
 </head>
 <body>
+    <!-- Боковая панель -->
+    <div id="sidebar">
+        <h3>Информация о сотрудниках</h3>
+        <div id="employeeList"></div>
+        <h3>Дополнительная информация</h3>
+        <div id="additionalInfo">Здесь можно добавить другие данные в будущем.</div>
+    </div>
+
+    <!-- Карта -->
     <div id="map"></div>
+    
+    <!-- Контроль автообновления -->
     <div class="refresh-control">
         Автообновление: <input type="checkbox" id="autoRefresh" checked> 
         <span id="lastUpdate"></span>
@@ -29,6 +60,7 @@
     <script>
         let map;
         let markers = [];
+        let employees = [];
         
         // Инициализация карты
         function initMap() {
@@ -55,9 +87,13 @@
                 markers.forEach(marker => map.removeLayer(marker));
                 markers = [];
                 
-                // Добавляем новые маркеры
+                // Очищаем информацию о сотрудниках
+                employees = [];
+                document.getElementById('employeeList').innerHTML = '';
+
+                // Добавляем новые маркеры и информацию о сотрудниках
                 data.features.forEach(feature => {
-                    const { city, count } = feature.properties;
+                    const { city, count, size } = feature.properties;
                     const [lon, lat] = feature.geometry.coordinates;
                     
                     const marker = L.circleMarker([lat, lon], {
@@ -70,6 +106,15 @@
                     .addTo(map);
                     
                     markers.push(marker);
+
+                    // Добавляем информацию о сотрудниках в боковую панель
+                    employeesInfo.forEach(employee => {
+                        const employeeDiv = document.createElement('div');
+                        employeeDiv.classList.add('employee-info');
+                        employeeDiv.innerHTML = `<b>${employee.name}</b><br>Город: ${city}`;
+                        document.getElementById('employeeList').appendChild(employeeDiv);
+                        employees.push(employee);
+                    });
                 });
                 
                 document.getElementById('lastUpdate').textContent = 
