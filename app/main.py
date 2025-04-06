@@ -26,12 +26,15 @@ def get_user_data(user_id: int) -> dict:
         logger.error(f"Error fetching data for user {user_id}: {e}")
         return None
 
-# Функция для получения координат города с использованием geocoder
-def get_coordinates(city: str) -> list:
+# Функция для получения координат города с использованием кэширования
+def get_coordinates(city: str, cache: dict) -> list:
     if not city or city == "No city":
         return None
+    if city in cache:
+        return cache[city]
     g = geocoder.osm(city, headers={'User-Agent': 'FT_map/1.0 (imatveev@futuretoday.ru)'})
     if g.ok:
+        cache[city] = g.latlng
         return g.latlng
     else:
         logger.warning(f"Город {city} не найден в геокодере.")
@@ -40,11 +43,14 @@ def get_coordinates(city: str) -> list:
 # Эндпоинт для генерации карты
 @app.get("/map", response_class=HTMLResponse)
 async def get_map():
-    user_ids = [1221, 1063, 1319]
+    # Перебираем ID сотрудников от 1 до 1400
+    user_ids = range(1, 50)
     map = folium.Map(location=[55.7558, 37.6173], zoom_start=5)  # Центр карты — Москва
 
     # Создаем словарь для группировки сотрудников по городам
     city_employees = {}
+    # Кэш для координат городов
+    coordinates_cache = {}
 
     # Собираем данные о сотрудниках
     for user_id in user_ids:
@@ -54,7 +60,7 @@ async def get_map():
             city = "No city"
             for field in user_data['user']['custom_fields']:
                 if field['name'] == 'Город проживания':
-                    city = field['value']
+                    city = field['value'] or "No city"  # Если поле пустое, используем "No city"
                     break
             logger.info(f"User {user_id}: Город проживания: {city}")
 
@@ -65,11 +71,11 @@ async def get_map():
                 city_employees[city].append(name)
         else:
             logger.warning(f"Пользователь с ID {user_id} не найден.")
-        time.sleep(1)  # Задержка между запросами
+        time.sleep(1)  # Задержка между запросами для избежания перегрузки API
 
     # Добавляем метки для каждого города
     for city, employees in city_employees.items():
-        coordinates = get_coordinates(city)
+        coordinates = get_coordinates(city, coordinates_cache)
         if coordinates:
             # Формируем HTML для попапа со списком сотрудников
             popup_html = f"<b>Сотрудники в городе {city}</b><br><ul>"
