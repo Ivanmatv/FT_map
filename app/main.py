@@ -1,158 +1,100 @@
-from fastapi import FastAPI, Request, Query
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 import requests
-from collections import defaultdict
-import asyncio
-from typing import Optional, List, Dict
-from pydantic import BaseModel
-
-# Импорт и инициализация логгера
+import geocoder
+import folium
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from .logger import get_logger
+import time
+
+# Инициализируем логгер
 logger = get_logger()
 
-app = FastAPI()
-templates = Jinja2Templates(directory="templates")
-
 REDMINE_URL = "https://tasks.fut.ru"
-API_KEY = "3ad93a967ae50a9d50072d628e8b97ee0002bf7d"
-CITY_FIELD_NAME = "city"
+API_KEY = "fc3fb4d72858a7dbbf747dceb6e99325dbed58b2"
 
-# Кэш координат городов
-city_coords_cache = {
-    "Москва": (55.7558, 37.6173),
-    "Санкт-Петербург": (59.9343, 30.3351),
-    "Екатеринбург": (56.8389, 60.6057),
-}
+app = FastAPI()
 
-@app.on_event("startup")
-async def startup_event():
-    logger.info("Сервер запущен")
-    logger.debug(f"Конфигурация: REDMINE_URL={REDMINE_URL}, CITY_FIELD={CITY_FIELD_NAME}")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("Сервер остановлен")
-
-async def fetch_users():
-    """Получение пользователей из Redmine с логированием"""
-    logger.debug("Начало получения пользователей из Redmine")
-    url = f"{REDMINE_URL}/users.json?limit=1000"
-    headers = {"X-Redmine-API-Key": API_KEY}
-    
+# Функция для получения данных о пользователе
+def get_user_data(user_id: int) -> dict:
+    url = f"{REDMINE_URL}/users/{user_id}.json"
+    headers = {'X-Redmine-API-Key': API_KEY}
     try:
         response = requests.get(url, headers=headers)
         response.raise_for_status()
-        logger.info(f"Успешно получено {len(response.json().get('users', []))} пользователей")
-        return response.json().get("users", [])
-    except requests.exceptions.HTTPError as e:
-        logger.error(f"Ошибка HTTP при запросе пользователей: {e.response.status_code}")
-        raise
-    except Exception as e:
-        logger.critical(f"Критическая ошибка при запросе пользователей: {str(e)}", exc_info=True)
-        raise
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching data for user {user_id}: {e}")
+        return None
 
-def process_users(users):
-    """Обработка данных пользователей с логированием"""
-    logger.debug("Начало обработки данных пользователей")
-    city_stats = defaultdict(int)
-    
-    try:
-        for index, user in enumerate(users):
-            city = None
-            for cf in user.get("custom_fields", []):
-                if cf.get("name") == CITY_FIELD_NAME and cf.get("value"):
-                    city = cf["value"]
-                    break
-            
-            if city:
-                if city in city_coords_cache:
-                    city_stats[city] += 1
-                    logger.debug(f"Пользователь {index}: город {city}")
-                else:
-                    logger.warning(f"Город {city} не найден в кэше координатов")
-            else:
-                logger.debug(f"Пользователь {index}: город не указан")
-        
-        logger.info(f"Обработано {len(users)} пользователей, найдено {len(city_stats)} городов")
-        return city_stats
-    
-    except Exception as e:
-        logger.error(f"Ошибка обработки пользователей: {str(e)}", exc_info=True)
-        raise
+# Функция для получения координат города с использованием geocoder
+def get_coordinates(city: str) -> list:
+    if not city or city == "No city":
+        return None
+    g = geocoder.osm(city, headers={'User-Agent': 'FT_map/1.0 (imatveev@futuretoday.ru)'})
+    if g.ok:
+        return g.latlng
+    else:
+        logger.warning(f"Город {city} не найден в геокодере.")
+        return None
 
-@app.get("/map-data")
-async def get_map_data():
-    """Эндпоинт данных для карты"""
-    logger.info("Запрос данных для карты")
-    try:
-        users = await fetch_users()
-        city_stats = process_users(users)
-        
-        features = []
-        for city, count in city_stats.items():
-            lat, lon = city_coords_cache.get(city, (None, None))
-            if lat and lon:
-                features.append({
-                    "type": "Feature",
-                    "geometry": {"type": "Point", "coordinates": [lon, lat]},
-                    "properties": {"city": city, "count": count}
-                })
-            else:
-                logger.warning(f"Пропущен город {city} - отсутствуют координаты")
-        
-        logger.debug(f"Сформировано {len(features)} объектов для карты")
-        return JSONResponse({"type": "FeatureCollection", "features": features})
-    
-    except Exception as e:
-        logger.error(f"Ошибка формирования данных карты: {str(e)}")
-        return JSONResponse(
-            {"error": "Internal Server Error"}, 
-            status_code=500
-        )
-
+# Эндпоинт для генерации карты
 @app.get("/map", response_class=HTMLResponse)
-async def map_page(request: Request):
-    """Страница с картой"""
-    logger.info("Запрос страницы с картой")
-    return templates.TemplateResponse("map.html", {"request": request})
+async def get_map():
+    user_ids = [1221, 1063, 1319]
+    map = folium.Map(location=[55.7558, 37.6173], zoom_start=5)  # Центр карты — Москва
 
-@app.get("/users")
-async def get_users(email_domain: str = Query(...)):
-    """Поиск пользователей по домену"""
-    logger.info(f"Поиск пользователей по домену: @{email_domain}")
+    # Создаем словарь для группировки сотрудников по городам
+    city_employees = {}
+
+    # Собираем данные о сотрудниках
+    for user_id in user_ids:
+        user_data = get_user_data(user_id)
+        if user_data:
+            name = f"{user_data['user']['firstname']} {user_data['user']['lastname']}"
+            city = "No city"
+            for field in user_data['user']['custom_fields']:
+                if field['name'] == 'Город проживания':
+                    city = field['value']
+                    break
+            logger.info(f"User {user_id}: Город проживания: {city}")
+
+            # Если город указан, добавляем сотрудника в список для этого города
+            if city != "No city":
+                if city not in city_employees:
+                    city_employees[city] = []
+                city_employees[city].append(name)
+        else:
+            logger.warning(f"Пользователь с ID {user_id} не найден.")
+        time.sleep(1)  # Задержка между запросами
+
+    # Добавляем метки для каждого города
+    for city, employees in city_employees.items():
+        coordinates = get_coordinates(city)
+        if coordinates:
+            # Формируем HTML для попапа со списком сотрудников
+            popup_html = f"<b>Сотрудники в городе {city}</b><br><ul>"
+            for employee in employees:
+                popup_html += f"<li>{employee}</li>"
+            popup_html += "</ul>"
+
+            # Добавляем метку на карту
+            folium.Marker(
+                location=coordinates,
+                popup=folium.Popup(popup_html, max_width=300)
+            ).add_to(map)
+        else:
+            logger.warning(f"Не удалось получить координаты для города {city}")
+
+    # Сохраняем карту в HTML-файл
+    map_path = "employees_map.html"
     try:
-        users = await fetch_users()
-        filtered_users = [
-            user for user in users 
-            if user.get("mail", "").endswith(f"@{email_domain}")
-        ]
-        
-        logger.info(f"Найдено {len(filtered_users)} пользователей с доменом @{email_domain}")
-        return JSONResponse(
-            content=[extract_user_data(user) for user in filtered_users],
-            headers={"X-Domain-Filter": email_domain}
-        )
+        map.save(map_path)
+        logger.info(f"Карта сохранена в {map_path}")
     except Exception as e:
-        logger.error(f"Ошибка поиска пользователей: {str(e)}")
-        return JSONResponse(
-            {"error": "Internal Server Error"}, 
-            status_code=500
-        )
+        logger.error(f"Ошибка при сохранении карты: {e}")
 
-def extract_user_data(user):
-    """Извлечение данных пользователя с обработкой ошибок"""
-    try:
-        return {
-            "id": user["id"],
-            "name": f"{user.get('firstname', '')} {user.get('lastname', '')}".strip(),
-            "email": user.get("mail", ""),
-            "city": next(
-                (cf["value"] for cf in user.get("custom_fields", [])
-                 if cf.get("name") == CITY_FIELD_NAME and cf.get("value")),
-                "Не указан"
-            )
-        }
-    except KeyError as e:
-        logger.warning(f"Ошибка извлечения данных пользователя: отсутствует ключ {str(e)}")
-        return {"error": "Неполные данные пользователя"}
+    # Читаем и возвращаем HTML
+    with open(map_path, 'r', encoding='utf-8') as file:
+        html_content = file.read()
+
+    return HTMLResponse(content=html_content)

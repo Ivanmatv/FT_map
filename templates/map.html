@@ -47,17 +47,21 @@
                 const response = await fetch('/map-data');
                 const data = await response.json();
                 
+                if (!response.ok) {
+                    throw new Error('Ошибка при получении данных');
+                }
+        
                 // Удаляем старые маркеры
                 markers.forEach(marker => map.removeLayer(marker));
                 markers = [];
                 
                 // Добавляем новые маркеры
                 data.features.forEach(feature => {
-                    const { city, count, size } = feature.properties;
+                    const { city, count } = feature.properties;
                     const [lon, lat] = feature.geometry.coordinates;
                     
                     const marker = L.circleMarker([lat, lon], {
-                        radius: size,
+                        radius: count,  // Можно использовать размер на основе количества сотрудников
                         color: '#3388ff',
                         fillColor: '#3388ff',
                         fillOpacity: 0.5
@@ -72,8 +76,10 @@
                     `Последнее обновление: ${new Date().toLocaleTimeString()}`;
             } catch (error) {
                 console.error('Ошибка обновления данных:', error);
+                alert('Не удалось загрузить данные. Попробуйте снова.');
             }
         }
+        
 
         // Автоматическое обновление каждые 5 минут
         let updateInterval;
