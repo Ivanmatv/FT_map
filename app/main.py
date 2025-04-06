@@ -3,8 +3,10 @@ import geocoder
 import folium
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from .logger import get_logger
 import time
+import os
 
 # Инициализируем логгер
 logger = get_logger()
@@ -13,6 +15,16 @@ REDMINE_URL = "https://tasks.fut.ru"
 API_KEY = "fc3fb4d72858a7dbbf747dceb6e99325dbed58b2"
 
 app = FastAPI()
+
+# Подключаем статические файлы из папки "static"
+app.mount("/static", StaticFiles(directory=os.path.join("app", "static")), name="static")
+
+# Главная страница как статический файл
+@app.get("/", response_class=HTMLResponse)
+async def get_home():
+    with open(os.path.join("app", "static", "index.html"), "r", encoding="utf-8") as file:
+        html_content = file.read()
+    return HTMLResponse(content=html_content)
 
 # Функция для получения данных о пользователе
 def get_user_data(user_id: int) -> dict:
@@ -43,16 +55,12 @@ def get_coordinates(city: str, cache: dict) -> list:
 # Эндпоинт для генерации карты
 @app.get("/map", response_class=HTMLResponse)
 async def get_map():
-    # Перебираем ID сотрудников от 1 до 1400
-    user_ids = range(1, 50)
+    user_ids = range(1, 50)  # Оставил 50 для примера, можно вернуть 1400
     map = folium.Map(location=[55.7558, 37.6173], zoom_start=5)  # Центр карты — Москва
 
-    # Создаем словарь для группировки сотрудников по городам
     city_employees = {}
-    # Кэш для координат городов
     coordinates_cache = {}
 
-    # Собираем данные о сотрудниках
     for user_id in user_ids:
         user_data = get_user_data(user_id)
         if user_data:
@@ -60,30 +68,26 @@ async def get_map():
             city = "No city"
             for field in user_data['user']['custom_fields']:
                 if field['name'] == 'Город проживания':
-                    city = field['value'] or "No city"  # Если поле пустое, используем "No city"
+                    city = field['value'] or "No city"
                     break
             logger.info(f"User {user_id}: Город проживания: {city}")
 
-            # Если город указан, добавляем сотрудника в список для этого города
             if city != "No city":
                 if city not in city_employees:
                     city_employees[city] = []
                 city_employees[city].append(name)
         else:
             logger.warning(f"Пользователь с ID {user_id} не найден.")
-        time.sleep(1)  # Задержка между запросами для избежания перегрузки API
+        time.sleep(1)
 
-    # Добавляем метки для каждого города
     for city, employees in city_employees.items():
         coordinates = get_coordinates(city, coordinates_cache)
         if coordinates:
-            # Формируем HTML для попапа со списком сотрудников
             popup_html = f"<b>Сотрудники в городе {city}</b><br><ul>"
             for employee in employees:
                 popup_html += f"<li>{employee}</li>"
             popup_html += "</ul>"
 
-            # Добавляем метку на карту
             folium.Marker(
                 location=coordinates,
                 popup=folium.Popup(popup_html, max_width=300)
@@ -91,7 +95,6 @@ async def get_map():
         else:
             logger.warning(f"Не удалось получить координаты для города {city}")
 
-    # Сохраняем карту в HTML-файл
     map_path = "employees_map.html"
     try:
         map.save(map_path)
@@ -99,8 +102,7 @@ async def get_map():
     except Exception as e:
         logger.error(f"Ошибка при сохранении карты: {e}")
 
-    # Читаем и возвращаем HTML
-    with open(map_path, 'r', encoding='utf-8') as file:
+    with open(map_path, "r", encoding="utf-8") as file:
         html_content = file.read()
 
     return HTMLResponse(content=html_content)
