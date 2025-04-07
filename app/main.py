@@ -12,7 +12,7 @@ import os
 logger = get_logger()
 
 REDMINE_URL = "https://tasks.fut.ru"
-API_KEY = "fc3fb4d72858a7dbbf747dceb6e99325dbed58b2"
+API_KEY = os.getenv("API_KEY")
 
 app = FastAPI()
 
