@@ -1,14 +1,14 @@
 import requests
 import geocoder
-import folium
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from .logger import get_logger
-import time
 import os
 from dotenv import load_dotenv
 import sqlite3
+import json
+import time
+from .logger import get_logger
 
 # Загружаем переменные из .env
 load_dotenv()
@@ -38,9 +38,7 @@ def init_db():
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
             email TEXT NOT NULL,
-            city TEXT NOT NULL,
-            job_title TEXT,
-            department TEXT
+            city TEXT NOT NULL
         )
     """)
     conn.commit()
@@ -65,27 +63,24 @@ def get_user_data(user_id: int) -> dict:
 def get_or_fetch_user_data(user_id: int):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT name, email, city, job_title, department FROM employees WHERE id = ?", (user_id,))
+    cursor.execute("SELECT name, email, city FROM employees WHERE id = ?", (user_id,))
     result = cursor.fetchone()
 
     if result:
-        # Если пользователь есть в базе, возвращаем данные
-        name, email, city, job_title, department = result
+        name, email, city = result
+        logger.debug(f"User {user_id} found in database: {name}, {email}, {city}")
         return {
             'user': {
                 'id': user_id,
-                'firstname': name.split()[0],  # Предполагаем, что имя и фамилия разделены пробелом
+                'firstname': name.split()[0],
                 'lastname': ' '.join(name.split()[1:]),
                 'mail': email,
                 'custom_fields': [
-                    {'name': 'Город проживания', 'value': city},
-                    {'name': 'Должность', 'value': job_title},
-                    {'name': 'Отдел', 'value': department}
+                    {'name': 'Город проживания', 'value': city}
                 ]
             }
         }
 
-    # Если пользователя нет в базе, запрашиваем из API
     user_data = get_user_data(user_id)
     if user_data:
         user = user_data['user']
@@ -93,41 +88,77 @@ def get_or_fetch_user_data(user_id: int):
         if email.endswith('@futuretoday.ru'):
             name = f"{user['firstname']} {user['lastname']}"
             city = "No city"
-            job_title = "Не указана"
-            department = "Не указан"
             for field in user.get('custom_fields', []):
                 if field['name'] == 'Город проживания':
                     city = field.get('value') or "No city"
-                elif field['name'] == 'Должность':
-                    job_title = field.get('value') or "Не указана"
-                elif field['name'] == 'Отдел':
-                    department = field.get('value') or "Не указан"
-
-            # Сохраняем в базу
+            city = clean_city_name(field.get('value') or "No city")
+            if not city:
+                city = "No city"
             cursor.execute("""
-                INSERT OR REPLACE INTO employees (id, name, email, city, job_title, department)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (user_id, name, email, city, job_title, department))
+                INSERT OR REPLACE INTO employees (id, name, email, city)
+                VALUES (?, ?, ?, ?)
+            """, (user_id, name, email, city))
             conn.commit()
-            logger.info(f"User {user_id} saved to database: {name}, {email}")
+            logger.info(f"User {user_id} saved to database: {name}, {email}, {city}")
             return user_data
 
     conn.close()
+    logger.warning(f"User {user_id} not found in API")
     return None
+
+# Функция для получения всех сотрудников из базы
+def get_all_employees():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, email, city FROM employees")
+    employees = [
+        {'id': row[0], 'name': row[1], 'email': row[2], 'city': row[3]}
+        for row in cursor.fetchall()
+    ]
+    conn.close()
+    logger.info(f"Извлечено {len(employees)} сотрудников из базы данных")
+    return employees
 
 # Функция для получения координат города с использованием кэширования
 def get_coordinates(city: str, cache: dict) -> list:
     if not city or city == "No city":
+        logger.warning(f"Город '{city}' пропущен, так как он пустой или равен 'No city'")
         return None
     if city in cache:
         return cache[city]
     g = geocoder.osm(city, headers={'User-Agent': 'FT_map/1.0 (imatveev@futuretoday.ru)'})
     if g.ok:
         cache[city] = g.latlng
+        logger.info(f"Координаты для города {city}: {g.latlng}")
         return g.latlng
     else:
-        logger.warning(f"Город {city} не найден в геокодере.")
+        logger.warning(f"Город {city} не найден в геокодере")
         return None
+
+
+def clean_city_name(city):
+    # Удаляем ведущие и конечные пробелы
+    city = city.strip()
+
+    # Пропускаем некорректные значения
+    if not city or city in ["No city", "Ввести город", "Город проживания"]:
+        return None
+
+    # Словарь для известных вариаций
+    mapping = {
+        "Санкт Петербург": "Санкт-Петербург",
+        "г. Петергоф, г. Санкт-Петербург": "Санкт-Петербург",
+        "Пермь/Санкт-Петербург": "Санкт-Петербург",  # Предполагаем основной город
+        "Электросталь (МО)": "Электросталь",
+        "Орехово-Зуево, Московская обл.": "Орехово-Зуево",
+        "Пушкино, Московская область": "Пушкино",
+        "Белград, Сербия": "Белград",
+        "Нови Сад, Сербия": "Нови Сад",
+    }
+
+    # Применяем или возвращаем очищенное название
+    return mapping.get(city, city)
+
 
 # Главная страница как статический файл
 @app.get("/", response_class=HTMLResponse)
@@ -139,79 +170,98 @@ async def get_home():
 # Эндпоинт для генерации карты
 @app.get("/map", response_class=HTMLResponse)
 async def get_map():
-    user_ids = range(1, 1400)  # Оставил 50 для примера, можно вернуть 1400
-    map = folium.Map(location=[55.7558, 37.6173], zoom_start=5)  # Центр карты — Москва
+    employees = get_all_employees()
+    logger.info(f"Извлечено {len(employees)} сотрудников из базы данных")
 
     city_employees = {}
     coordinates_cache = {}
 
-    for user_id in user_ids:
-        user_data = get_or_fetch_user_data(user_id)
-        if user_data:
-            user = user_data['user']
-            email = user.get('mail', '')
-            name = f"{user['firstname']} {user['lastname']}"
-
-            if not email.endswith('@futuretoday.ru'):
-                logger.info(f"User {user_id} skipped: email {email} does not end with @futuretoday.ru")
-                continue
-
-            city = "No city"
-            job_title = "Не указана"
-            department = "Не указан"
-            for field in user.get('custom_fields', []):
-                if field['name'] == 'Город проживания':
-                    city = field.get('value') or "No city"
-                elif field['name'] == 'Должность':
-                    job_title = field.get('value') or "Не указана"
-                elif field['name'] == 'Отдел':
-                    department = field.get('value') or "Не указан"
-
-            logger.info(f"User {user_id}: Email: {email}, Город: {city}, Должность: {job_title}, Отдел: {department}")
-
-            if city != "No city":
-                if city not in city_employees:
-                    city_employees[city] = []
-                city_employees[city].append({
-                    'name': name,
-                    'email': email,
-                    'job_title': job_title,
-                    'department': department
-                })
+    # Группируем сотрудников по очищенным названиям городов
+    for employee in employees:
+        city = clean_city_name(employee['city'])
+        if city:  # Пропускаем, если город некорректен
+            if city not in city_employees:
+                city_employees[city] = []
+            city_employees[city].append({
+                'name': employee['name'],
+                'email': employee['email']
+            })
+            logger.debug(f"Добавлен сотрудник {employee['name']} в город {city}")
+            total_employees = sum(len(emps) for emps in city_employees.values())
+            total_cities = len(city_employees)
+            logger.info(f"Всего сгруппировано {total_employees} сотрудников в {total_cities} городах")
         else:
-            logger.warning(f"Пользователь с ID {user_id} не найден.")
-        time.sleep(1)  # Задержка только для API запросов
+            logger.warning(f"Сотрудник {employee['name']} пропущен: город не указан или некорректен")
 
-    for city, employees in city_employees.items():
+    # Подготовка данных для карты
+    city_data = {}
+    for city, emp_list in city_employees.items():
         coordinates = get_coordinates(city, coordinates_cache)
         if coordinates:
-            popup_html = f"<b>Сотрудники в городе {city}</b><br><ul>"
-            for employee in employees:
-                popup_html += (
-                    f"<li>"
-                    f"{employee['name']}<br>"
-                    f"Email: {employee['email']}<br>"
-                    f"Должность: {employee['job_title']}<br>"
-                    f"Отдел: {employee['department']}"
-                    f"</li>"
-                )
-            popup_html += "</ul>"
-
-            folium.Marker(
-                location=coordinates,
-                popup=folium.Popup(popup_html, max_width=300)
-            ).add_to(map)
+            city_data[city] = {
+                'coordinates': coordinates,
+                'employees': emp_list
+            }
+            logger.info(f"Город {city} добавлен на карту с {len(emp_list)} сотрудниками")
         else:
-            logger.warning(f"Не удалось получить координаты для города {city}")
+            logger.warning(f"Город {city} не добавлен на карту: координаты не найдены")
 
-    map_path = "employees_map.html"
-    try:
-        map.save(map_path)
-        logger.info(f"Карта сохранена в {map_path}")
-    except Exception as e:
-        logger.error(f"Ошибка при сохранении карты: {e}")
+    # Генерация HTML (оставляем как есть)
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Карта сотрудников</title>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <style>
+            body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+            #container { display: flex; height: 100vh; }
+            #sidebar {
+                width: 300px;
+                background-color: #f8f9fa;
+                padding: 20px;
+                overflow-y: auto;
+                border-right: 1px solid #ddd;
+            }
+            #map { flex: 1; height: 100%; }
+            h2 { font-size: 1.5em; margin-bottom: 10px; }
+            ul { list-style: none; padding: 0; }
+            li { margin-bottom: 10px; }
+            .employee { border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        </style>
+    </head>
+    <body>
+        <div id="container">
+            <div id="sidebar">
+                <h2>Сотрудники</h2>
+                <div id="employee-list">Выберите город на карте</div>
+            </div>
+            <div id="map"></div>
+        </div>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script>
+            const cityData = """ + json.dumps(city_data) + """;
+            const map = L.map('map').setView([55.7558, 37.6173], 5);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
 
-    with open(map_path, "r", encoding="utf-8") as file:
-        html_content = file.read()
+            for (const city in cityData) {
+                const { coordinates, employees } = cityData[city];
+                const marker = L.marker(coordinates).addTo(map);
+                marker.on('click', () => {
+                    const sidebar = document.getElementById('employee-list');
+                    sidebar.innerHTML = `<h3>Сотрудники в городе ${city}</h3><ul>` + 
+                        employees.map(emp => 
+                            `<li class="employee"><strong>${emp.name}</strong><br>Email: ${emp.email}</li>`
+                        ).join('') + `</ul>`;
+                });
+            }
+        </script>
+    </body>
+    </html>
+    """
 
     return HTMLResponse(content=html_content)
