@@ -203,6 +203,8 @@ async def get_map():
 
     city_data = {}
     for city, emp_list in city_employees.items():
+        # Сортируем сотрудников по имени в алфавитном порядке
+        emp_list.sort(key=lambda x: x['name'])
         coordinates = get_coordinates(city, coordinates_cache)
         if coordinates:
             city_data[city] = {

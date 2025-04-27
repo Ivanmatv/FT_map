@@ -59,6 +59,7 @@
             transition: background 0.3s, transform 0.2s, box-shadow 0.3s;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
             margin: 10px 0;
+            cursor: pointer;
         }
 
         .btn:hover {
@@ -108,6 +109,32 @@
 
         .form-group input:focus {
             border-color: #3498db;
+        }
+
+        .progress-container {
+            margin-top: 15px;
+            display: none;
+        }
+
+        .progress-bar {
+            width: 100%;
+            background: #eee;
+            border-radius: 5px;
+            overflow: hidden;
+            height: 20px;
+        }
+
+        .progress {
+            width: 0%;
+            height: 100%;
+            background: #3498db;
+            transition: width 0.3s;
+        }
+
+        .progress-text {
+            margin-top: 5px;
+            font-size: 0.9em;
+            color: #555;
         }
 
         .message {
@@ -169,7 +196,7 @@
     <div class="container">
         <h1>Добро пожаловать в FutureToday Map</h1>
         <p>Это приложение отображает местоположение сотрудников на интерактивной карте. Узнайте, где находятся ваши коллеги!</p>
-        <a href="/map" class="btn">Перейти к карте сотрудников</a>
+        <button class="btn" onclick="openMap()">Перейти к карте сотрудников</button>
 
         <div class="form-container">
             <h2>Добавить новых сотрудников</h2>
@@ -182,15 +209,28 @@
                 <input type="number" id="end_id" placeholder="Например, 2000" required>
             </div>
             <button class="btn" onclick="addUsers()">Добавить сотрудников</button>
+            <div class="progress-container" id="progress-container">
+                <div class="progress-bar">
+                    <div class="progress" id="progress-bar"></div>
+                </div>
+                <div class="progress-text" id="progress-text">Обработка: 0%</div>
+            </div>
             <div id="message" class="message"></div>
         </div>
     </div>
 
     <script>
+        function openMap() {
+            window.open('/map', '_blank');
+        }
+
         async function addUsers() {
             const startId = document.getElementById('start_id').value;
             const endId = document.getElementById('end_id').value;
             const messageDiv = document.getElementById('message');
+            const progressContainer = document.getElementById('progress-container');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
 
             if (!startId || !endId || startId < 1 || endId < startId) {
                 messageDiv.className = 'message error';
@@ -199,30 +239,41 @@
             }
 
             messageDiv.className = 'message';
-            messageDiv.textContent = 'Обработка запроса...';
+            messageDiv.textContent = '';
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Обработка: 0%';
 
-            try {
-                const response = await fetch('/add_users', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ start_id: parseInt(startId), end_id: parseInt(endId) }),
-                });
+            const ws = new WebSocket(`ws://${window.location.host}/ws/add_users`);
 
-                const result = await response.json();
+            ws.onopen = () => {
+                ws.send(JSON.stringify({ start_id: parseInt(startId), end_id: parseInt(endId) }));
+            };
 
-                if (response.ok) {
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.status === 'progress') {
+                    const percentage = Math.round((data.processed / data.total) * 100);
+                    progressBar.style.width = `${percentage}%`;
+                    progressText.textContent = `Обработка: ${percentage}% (${data.processed}/${data.total})`;
+                } else if (data.status === 'complete') {
+                    progressContainer.style.display = 'none';
                     messageDiv.className = 'message success';
-                    messageDiv.textContent = `Добавлено ${result.added_count} новых сотрудников!`;
-                } else {
+                    messageDiv.textContent = `Добавлено ${data.added_count} новых сотрудников!`;
+                    ws.close();
+                } else if (data.status === 'error') {
+                    progressContainer.style.display = 'none';
                     messageDiv.className = 'message error';
-                    messageDiv.textContent = result.message || 'Ошибка при добавлении сотрудников.';
+                    messageDiv.textContent = data.message;
+                    ws.close();
                 }
-            } catch (error) {
+            };
+
+            ws.onerror = () => {
+                progressContainer.style.display = 'none';
                 messageDiv.className = 'message error';
-                messageDiv.textContent = 'Ошибка сети. Попробуйте снова.';
-            }
+                messageDiv.textContent = 'Ошибка подключения. Попробуйте снова.';
+            };
         }
     </script>
 </body>
