@@ -3,6 +3,7 @@ import geocoder
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
 import sqlite3
@@ -24,7 +25,7 @@ if not API_KEY:
 
 app = FastAPI()
 
-# Указываем путь к папке app/static относительно корня проекта
+# Указываем путь к папке app/static
 app.mount("/static", StaticFiles(directory=os.path.join("app", "static")), name="static")
 
 # Подключение к SQLite базе данных
@@ -44,10 +45,10 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Инициализация базы данных при запуске
+# Инициализация базы данных
 init_db()
 
-# Функция для получения данных о пользователе из Redmine API
+# Функция для получения данных из Redmine API
 def get_user_data(user_id: int) -> dict:
     url = f"{REDMINE_URL}/users/{user_id}.json"
     headers = {'X-Redmine-API-Key': API_KEY}
@@ -58,6 +59,25 @@ def get_user_data(user_id: int) -> dict:
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching data for user {user_id}: {e}")
         return None
+
+# Функция для очистки названий городов
+def clean_city_name(city):
+    if not city:
+        return None
+    city = city.strip()
+    if city in ["No city", "Ввести город", "Город проживания"]:
+        return None
+    mapping = {
+        "Санкт Петербург": "Санкт-Петербург",
+        "г. Петергоф, г. Санкт-Петербург": "Санкт-Петербург",
+        "Пермь/Санкт-Петербург": "Санкт-Петербург",
+        "Электросталь (МО)": "Электросталь",
+        "Орехово-Зуево, Московская обл.": "Орехово-Зуево",
+        "Пушкино, Московская область": "Пушкино",
+        "Белград, Сербия": "Белград",
+        "Нови Сад, Сербия": "Нови Сад",
+    }
+    return mapping.get(city, city)
 
 # Функция для получения данных из базы или API
 def get_or_fetch_user_data(user_id: int):
@@ -75,9 +95,7 @@ def get_or_fetch_user_data(user_id: int):
                 'firstname': name.split()[0],
                 'lastname': ' '.join(name.split()[1:]),
                 'mail': email,
-                'custom_fields': [
-                    {'name': 'Город проживания', 'value': city}
-                ]
+                'custom_fields': [{'name': 'Город проживания', 'value': city}]
             }
         }
 
@@ -91,9 +109,7 @@ def get_or_fetch_user_data(user_id: int):
             for field in user.get('custom_fields', []):
                 if field['name'] == 'Город проживания':
                     city = field.get('value') or "No city"
-            city = clean_city_name(field.get('value') or "No city")
-            if not city:
-                city = "No city"
+            city = clean_city_name(city) or "No city"
             cursor.execute("""
                 INSERT OR REPLACE INTO employees (id, name, email, city)
                 VALUES (?, ?, ?, ?)
@@ -106,7 +122,7 @@ def get_or_fetch_user_data(user_id: int):
     logger.warning(f"User {user_id} not found in API")
     return None
 
-# Функция для получения всех сотрудников из базы
+# Функция для получения всех сотрудников
 def get_all_employees():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -119,10 +135,10 @@ def get_all_employees():
     logger.info(f"Извлечено {len(employees)} сотрудников из базы данных")
     return employees
 
-# Функция для получения координат города с использованием кэширования
+# Функция для получения координат города
 def get_coordinates(city: str, cache: dict) -> list:
     if not city or city == "No city":
-        logger.warning(f"Город '{city}' пропущен, так как он пустой или равен 'No city'")
+        logger.warning(f"Город '{city}' пропущен")
         return None
     if city in cache:
         return cache[city]
@@ -131,69 +147,60 @@ def get_coordinates(city: str, cache: dict) -> list:
         cache[city] = g.latlng
         logger.info(f"Координаты для города {city}: {g.latlng}")
         return g.latlng
-    else:
-        logger.warning(f"Город {city} не найден в геокодере")
-        return None
+    logger.warning(f"Город {city} не найден в геокодере")
+    return None
 
+# Модель для валидации входных данных
+class UserRange(BaseModel):
+    start_id: int
+    end_id: int
 
-def clean_city_name(city):
-    # Удаляем ведущие и конечные пробелы
-    city = city.strip()
+# Эндпоинт для добавления новых сотрудников
+@app.post("/add_users")
+async def add_users(user_range: UserRange):
+    start_id = user_range.start_id
+    end_id = user_range.end_id
 
-    # Пропускаем некорректные значения
-    if not city or city in ["No city", "Ввести город", "Город проживания"]:
-        return None
+    if start_id < 1 or end_id < start_id:
+        return {"message": "Некорректный диапазон ID", "status": "error"}
 
-    # Словарь для известных вариаций
-    mapping = {
-        "Санкт Петербург": "Санкт-Петербург",
-        "г. Петергоф, г. Санкт-Петербург": "Санкт-Петербург",
-        "Пермь/Санкт-Петербург": "Санкт-Петербург",  # Предполагаем основной город
-        "Электросталь (МО)": "Электросталь",
-        "Орехово-Зуево, Московская обл.": "Орехово-Зуево",
-        "Пушкино, Московская область": "Пушкино",
-        "Белград, Сербия": "Белград",
-        "Нови Сад, Сербия": "Нови Сад",
-    }
+    added_count = 0
+    for user_id in range(start_id, end_id + 1):
+        user_data = get_or_fetch_user_data(user_id)
+        if user_data and user_data['user']['mail'].endswith('@futuretoday.ru'):
+            added_count += 1
+        time.sleep(0.5)  # Задержка для избежания лимитов API
 
-    # Применяем или возвращаем очищенное название
-    return mapping.get(city, city)
+    logger.info(f"Добавлено {added_count} новых сотрудников из диапазона {start_id}-{end_id}")
+    return {"message": "Сотрудники успешно добавлены", "added_count": added_count, "status": "success"}
 
-
-# Главная страница как статический файл
+# Главная страница
 @app.get("/", response_class=HTMLResponse)
 async def get_home():
     with open(os.path.join("app", "static", "index.html"), "r", encoding="utf-8") as file:
         html_content = file.read()
     return HTMLResponse(content=html_content)
 
-# Эндпоинт для генерации карты
+# Эндпоинт для карты
 @app.get("/map", response_class=HTMLResponse)
 async def get_map():
     employees = get_all_employees()
-    logger.info(f"Извлечено {len(employees)} сотрудников из базы данных")
-
     city_employees = {}
     coordinates_cache = {}
 
-    # Группируем сотрудников по очищенным названиям городов
     for employee in employees:
         city = clean_city_name(employee['city'])
-        if city:  # Пропускаем, если город некорректен
+        if city:
             if city not in city_employees:
                 city_employees[city] = []
             city_employees[city].append({
                 'name': employee['name'],
                 'email': employee['email']
             })
-            logger.debug(f"Добавлен сотрудник {employee['name']} в город {city}")
-            total_employees = sum(len(emps) for emps in city_employees.values())
-            total_cities = len(city_employees)
-            logger.info(f"Всего сгруппировано {total_employees} сотрудников в {total_cities} городах")
+            logger.info(f"Сгруппировано {len(city_employees[city])} сотрудников для города {city}")
         else:
-            logger.warning(f"Сотрудник {employee['name']} пропущен: город не указан или некорректен")
+            logger.warning(f"Сотрудник {employee['name']} пропущен: город не указан")
 
-    # Подготовка данных для карты
     city_data = {}
     for city, emp_list in city_employees.items():
         coordinates = get_coordinates(city, coordinates_cache)
@@ -203,10 +210,7 @@ async def get_map():
                 'employees': emp_list
             }
             logger.info(f"Город {city} добавлен на карту с {len(emp_list)} сотрудниками")
-        else:
-            logger.warning(f"Город {city} не добавлен на карту: координаты не найдены")
 
-    # Генерация HTML (оставляем как есть)
     html_content = """
     <!DOCTYPE html>
     <html lang="ru">
@@ -263,5 +267,4 @@ async def get_map():
     </body>
     </html>
     """
-
     return HTMLResponse(content=html_content)
