@@ -320,9 +320,9 @@ async def get_map():
                 attribution: '© OpenStreetMap contributors'
             }).addTo(map);
 
-            function showEmployees(employees) {
+            function showEmployees(city, employees) {
                 var list = document.getElementById("employeeList");
-                list.innerHTML = "";
+                list.innerHTML = `<h3>Сотрудники в городе ${city}</h3>`;
                 employees.forEach(function(emp) {
                     var li = document.createElement("li");
                     li.innerHTML = `<strong>${emp.name}</strong><br>Email: ${emp.email}`;
@@ -347,7 +347,7 @@ async def get_map():
                     .bindPopup(data.city);
                 marker.on('click', function() {
                     console.log("Маркер для города " + data.city + " нажат");
-                    showEmployees(data.employees);
+                    showEmployees(data.city, data.employees);
                 });
             };
             ws.onclose = function() {
