@@ -1,6 +1,6 @@
 import requests
 import geocoder
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import sqlite3
 import json
 import time
+import asyncio
 from .logger import get_logger
 
 # Загружаем переменные из .env
@@ -217,89 +218,145 @@ async def get_home():
         html_content = file.read()
     return HTMLResponse(content=html_content)
 
+# WebSocket для отправки данных карты в реальном времени
+@app.websocket("/ws/map")
+async def websocket_map(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        employees = get_all_employees()
+        city_employees = {}
+        coordinates_cache = {}
+
+        for employee in employees:
+            city = clean_city_name(employee['city'])
+            if city:
+                if city not in city_employees:
+                    city_employees[city] = []
+                city_employees[city].append({
+                    'name': employee['name'],
+                    'email': employee['email']
+                })
+                logger.info(f"Сгруппировано {len(city_employees[city])} сотрудников для города {city}")
+            else:
+                logger.warning(f"Сотрудник {employee['name']} пропущен: город не указан")
+
+        for city, emp_list in city_employees.items():
+            emp_list.sort(key=lambda x: x['name'])
+            coordinates = get_coordinates(city, coordinates_cache)
+            if coordinates:
+                marker_data = {
+                    'city': city,
+                    'coordinates': coordinates,
+                    'employees': emp_list
+                }
+                await websocket.send_json(marker_data)
+                logger.info(f"Отправлены данные для города {city} с {len(emp_list)} сотрудниками")
+                await asyncio.sleep(0.1)  # Небольшая задержка для имитации потоковой передачи
+            else:
+                logger.warning(f"Координаты для города {city} не найдены")
+
+        await websocket.send_json({'status': 'complete'})
+        logger.info("Все данные карты отправлены")
+    except Exception as e:
+        logger.error(f"Ошибка в WebSocket: {e}")
+        await websocket.send_json({'status': 'error', 'message': str(e)})
+    finally:
+        await websocket.close()
+
 # Эндпоинт для карты
 @app.get("/map", response_class=HTMLResponse)
 async def get_map():
-    employees = get_all_employees()
-    city_employees = {}
-    coordinates_cache = {}
-
-    for employee in employees:
-        city = clean_city_name(employee['city'])
-        if city:
-            if city not in city_employees:
-                city_employees[city] = []
-            city_employees[city].append({
-                'name': employee['name'],
-                'email': employee['email']
-            })
-            logger.info(f"Сгруппировано {len(city_employees[city])} сотрудников для города {city}")
-        else:
-            logger.warning(f"Сотрудник {employee['name']} пропущен: город не указан")
-
-    city_data = {}
-    for city, emp_list in city_employees.items():
-        emp_list.sort(key=lambda x: x['name'])
-        coordinates = get_coordinates(city, coordinates_cache)
-        if coordinates:
-            city_data[city] = {
-                'coordinates': coordinates,
-                'employees': emp_list
-            }
-            logger.info(f"Город {city} добавлен на карту с {len(emp_list)} сотрудниками")
-
     html_content = """
     <!DOCTYPE html>
-    <html lang="ru">
+    <html>
     <head>
-        <meta charset="UTF-8">
+        <meta charset="utf-8">
+        <title>Employees Map</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Карта сотрудников</title>
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
         <style>
-            body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
-            #container { display: flex; height: 100vh; }
-            #sidebar {
-                width: 300px;
-                background-color: #f8f9fa;
-                padding: 20px;
-                overflow-y: auto;
-                border-right: 1px solid #ddd;
+            body {
+                margin: 0;
+                font-family: Arial, sans-serif;
             }
-            #map { flex: 1; height: 100%; }
-            h2 { font-size: 1.5em; margin-bottom: 10px; }
-            ul { list-style: none; padding: 0; }
-            li { margin-bottom: 10px; }
-            .employee { border-bottom: 1px solid #eee; padding-bottom: 5px; }
+            #sidebar {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 300px;
+                height: 100%;
+                overflow-y: auto;
+                background: #f8f8f8;
+                border-right: 1px solid #ccc;
+                padding: 10px;
+                box-sizing: border-box;
+                z-index: 1000;
+            }
+            #sidebar h3 {
+                margin-top: 0;
+            }
+            #employeeList li {
+                padding: 4px 0;
+                border-bottom: 1px solid #ddd;
+            }
+            #map {
+                position: absolute;
+                top: 0;
+                left: 300px;
+                right: 0;
+                bottom: 0;
+            }
         </style>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     </head>
     <body>
-        <div id="container">
-            <div id="sidebar">
-                <h2>Сотрудники</h2>
-                <div id="employee-list">Выберите город на карте</div>
-            </div>
-            <div id="map"></div>
+        <div id="sidebar">
+            <h3>Сотрудники</h3>
+            <ul id="employeeList"></ul>
         </div>
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <div id="map"></div>
         <script>
-            const cityData = """ + json.dumps(city_data) + """;
-            const map = L.map('map').setView([55.7558, 37.6173], 5);
+            var map = L.map('map').setView([55.7558, 37.6173], 5);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                attribution: '© OpenStreetMap contributors'
             }).addTo(map);
 
-            for (const city in cityData) {
-                const { coordinates, employees } = cityData[city];
-                const marker = L.marker(coordinates).addTo(map);
-                marker.on('click', () => {
-                    const sidebar = document.getElementById('employee-list');
-                    sidebar.innerHTML = `<h3>Сотрудники в городе ${city}</h3><ul>` + 
-                        employees.map(emp => 
-                            `<li class="employee"><strong>${emp.name}</strong><br>Email: ${emp.email}</li>`
-                        ).join('') + `</ul>`;
+            function showEmployees(employees) {
+                var list = document.getElementById("employeeList");
+                list.innerHTML = "";
+                employees.forEach(function(emp) {
+                    var li = document.createElement("li");
+                    li.innerHTML = `<strong>${emp.name}</strong><br>Email: ${emp.email}`;
+                    list.appendChild(li);
                 });
             }
+
+            var ws = new WebSocket("ws://" + window.location.host + "/ws/map");
+            ws.onmessage = function(event) {
+                var data = JSON.parse(event.data);
+                console.log("Получены данные:", data);
+                if (data.status === 'complete') {
+                    console.log("Все данные карты получены");
+                    return;
+                }
+                if (data.status === 'error') {
+                    console.error("Ошибка:", data.message);
+                    return;
+                }
+                var marker = L.marker(data.coordinates)
+                    .addTo(map)
+                    .bindPopup(data.city);
+                marker.on('click', function() {
+                    console.log("Маркер для города " + data.city + " нажат");
+                    showEmployees(data.employees);
+                });
+            };
+            ws.onclose = function() {
+                console.log("WebSocket соединение закрыто");
+            };
+            ws.onerror = function(error) {
+                console.error("WebSocket ошибка:", error);
+            };
         </script>
     </body>
     </html>
