@@ -1,6 +1,6 @@
 import requests
 import geocoder
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -30,6 +30,9 @@ app.mount("/static", StaticFiles(directory=os.path.join("app", "static")), name=
 
 # Подключение к SQLite базе данных
 DB_PATH = "users.db"
+
+# Хранилище прогресса для задач
+progress_store = {}
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -154,25 +157,58 @@ def get_coordinates(city: str, cache: dict) -> list:
 class UserRange(BaseModel):
     start_id: int
     end_id: int
+    task_id: str
+
+# Функция для фоновой обработки пользователей
+def process_users(start_id: int, end_id: int, task_id: str):
+    logger.info(f"Starting background task {task_id} for range {start_id}-{end_id}")
+    progress_store[task_id] = {'progress': 0, 'error': None, 'message': None, 'added_count': 0}
+    added_count = 0
+
+    try:
+        for user_id in range(start_id, end_id + 1):
+            user_data = get_or_fetch_user_data(user_id)
+            if user_data and user_data['user']['mail'].endswith('@futuretoday.ru'):
+                added_count += 1
+            progress_store[task_id]['progress'] += 1
+            progress_store[task_id]['added_count'] = added_count
+            logger.debug(f"Task {task_id}: Processed user {user_id}, progress {progress_store[task_id]['progress']}, added {added_count}")
+            time.sleep(0.5)  # Задержка для избежания лимитов API
+
+        logger.info(f"Task {task_id}: Added {added_count} new employees from range {start_id}-{end_id}")
+
+    except Exception as e:
+        progress_store[task_id]['error'] = True
+        progress_store[task_id]['message'] = str(e)
+        logger.error(f"Task {task_id}: Error processing users: {e}")
+
+    finally:
+        time.sleep(2)  # Даём клиенту время получить финальный прогресс
+        logger.debug(f"Task {task_id}: Cleaning up progress_store")
+        progress_store.pop(task_id, None)
+
+# Эндпоинт для получения прогресса
+@app.get("/progress/{task_id}")
+async def get_progress(task_id: str):
+    progress = progress_store.get(task_id, {'progress': 0, 'error': None, 'message': None, 'added_count': 0})
+    logger.debug(f"Progress requested for task {task_id}: {progress}")
+    return progress
 
 # Эндпоинт для добавления новых сотрудников
 @app.post("/add_users")
-async def add_users(user_range: UserRange):
+async def add_users(user_range: UserRange, background_tasks: BackgroundTasks):
     start_id = user_range.start_id
     end_id = user_range.end_id
+    task_id = user_range.task_id
 
     if start_id < 1 or end_id < start_id:
+        logger.warning(f"Invalid range {start_id}-{end_id} for task {task_id}")
         return {"message": "Некорректный диапазон ID", "status": "error"}
 
-    added_count = 0
-    for user_id in range(start_id, end_id + 1):
-        user_data = get_or_fetch_user_data(user_id)
-        if user_data and user_data['user']['mail'].endswith('@futuretoday.ru'):
-            added_count += 1
-        time.sleep(0.5)  # Задержка для избежания лимитов API
-
-    logger.info(f"Добавлено {added_count} новых сотрудников из диапазона {start_id}-{end_id}")
-    return {"message": "Сотрудники успешно добавлены", "added_count": added_count, "status": "success"}
+    # Запускаем обработку в фоновом режиме
+    background_tasks.add_task(process_users, start_id, end_id, task_id)
+    logger.info(f"Scheduled background task {task_id} for range {start_id}-{end_id}")
+    return {"message": "Обработка запущена", "task_id": task_id, "status": "success"}
 
 # Главная страница
 @app.get("/", response_class=HTMLResponse)
@@ -203,7 +239,6 @@ async def get_map():
 
     city_data = {}
     for city, emp_list in city_employees.items():
-        # Сортируем сотрудников по имени в алфавитном порядке
         emp_list.sort(key=lambda x: x['name'])
         coordinates = get_coordinates(city, coordinates_cache)
         if coordinates:
