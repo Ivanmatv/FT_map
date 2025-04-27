@@ -7,7 +7,6 @@ from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
 import sqlite3
-import json
 import time
 import asyncio
 from .logger import get_logger
