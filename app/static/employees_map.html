@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Employees Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        #sidebar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 300px;
+            height: 100%;
+            overflow-y: auto;
+            background: #f8f8f8;
+            border-right: 1px solid #ccc;
+            padding: 10px;
+            box-sizing: border-box;
+            z-index: 1000;
+            transition: transform 0.3s ease-in-out;
+        }
+        #sidebar.hidden {
+            transform: translateX(-100%);
+        }
+        #map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 500;
+        }
+        #sidebar-toggle {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 8px 12px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 1500;
+            font-size: 0.9em;
+        }
+        #sidebar-toggle.hidden {
+            left: 10px;
+        }
+        #sidebar h3 {
+            margin-top: 0;
+        }
+        #employeeList li {
+            padding: 4px 0;
+            border-bottom: 1px solid #ddd;
+        }
+        @media (max-width: 768px) {
+            #sidebar {
+                width: 200px;
+            }
+            #sidebar.hidden + #map {
+                left: 0;
+            }
+            #sidebar-toggle {
+                display: block;
+            }
+        }
+        @media (min-width: 769px) {
+            #sidebar-toggle {
+                display: none;
+            }
+            #sidebar.hidden {
+                transform: none;
+            }
+            #map {
+                left: 300px;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <button id="sidebar-toggle">Показать сайдбар</button>
+    <div id="sidebar" class="hidden">
+        <h3>Сотрудники</h3>
+        <ul id="employeeList"></ul>
+    </div>
+    <div id="map"></div>
+    <script>
+        var map = L.map('map').setView([55.7558, 37.6173], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        function showEmployees(city, employees) {
+            var list = document.getElementById("employeeList");
+            list.innerHTML = `<h3>Сотрудники в городе ${city}</h3>`;
+            employees.forEach(function(emp) {
+                var li = document.createElement("li");
+                li.innerHTML = `<strong>${emp.name}</strong><br>Email: ${emp.email}`;
+                list.appendChild(li);
+            });
+        }
+
+        var sidebar = document.getElementById('sidebar');
+        var toggleButton = document.getElementById('sidebar-toggle');
+        toggleButton.addEventListener('click', function() {
+            if (sidebar.classList.contains('hidden')) {
+                sidebar.classList.remove('hidden');
+                toggleButton.textContent = 'Скрыть сайдбар';
+                toggleButton.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('hidden');
+                toggleButton.textContent = 'Показать сайдбар';
+                toggleButton.classList.add('hidden');
+            }
+            map.invalidateSize();
+        });
+
+        var ws = new WebSocket("ws://" + window.location.host + "/ws/map");
+        ws.onmessage = function(event) {
+            var data = JSON.parse(event.data);
+            console.log("Получены данные:", data);
+            if (data.status === 'complete') {
+                console.log("Все данные карты получены");
+                return;
+            }
+            if (data.status === 'error') {
+                console.error("Ошибка:", data.message);
+                return;
+            }
+            var marker = L.marker(data.coordinates)
+                .addTo(map)
+                .bindPopup(data.city);
+            marker.on('click', function() {
+                console.log("Маркер для города " + data.city + " нажат");
+                showEmployees(data.city, data.employees);
+                if (window.innerWidth <= 768) {
+                    sidebar.classList.remove('hidden');
+                    toggleButton.textContent = 'Скрыть сайдбар';
+                    toggleButton.classList.remove('hidden');
+                }
+            });
+        };
+        ws.onclose = function() {
+            console.log("WebSocket соединение закрыто");
+        };
+        ws.onerror = function(error) {
+            console.error("WebSocket ошибка:", error);
+        };
+    </script>
+</body>
+</html>
