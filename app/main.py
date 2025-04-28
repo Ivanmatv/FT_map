@@ -217,6 +217,13 @@ async def get_home():
         html_content = file.read()
     return HTMLResponse(content=html_content)
 
+# Страница для добавления сотрудников
+@app.get("/add_users_form", response_class=HTMLResponse)
+async def get_add_users_form():
+    with open(os.path.join("app", "static", "add_users.html"), "r", encoding="utf-8") as file:
+        html_content = file.read()
+    return HTMLResponse(content=html_content)
+
 # WebSocket для отправки данных карты в реальном времени
 @app.websocket("/ws/map")
 async def websocket_map(websocket: WebSocket):
