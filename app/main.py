@@ -218,9 +218,9 @@ async def get_home():
     return HTMLResponse(content=html_content)
 
 # Страница для добавления сотрудников
-@app.get("/add_users_form", response_class=HTMLResponse)
-async def get_add_users_form():
-    with open(os.path.join("app", "static", "add_users.html"), "r", encoding="utf-8") as file:
+@app.get("/admin", response_class=HTMLResponse)
+async def get_admin_panel():
+    with open(os.path.join("app", "static", "admin.html"), "r", encoding="utf-8") as file:
         html_content = file.read()
     return HTMLResponse(content=html_content)
 
@@ -257,7 +257,7 @@ async def websocket_map(websocket: WebSocket):
                 }
                 await websocket.send_json(marker_data)
                 logger.info(f"Отправлены данные для города {city} с {len(emp_list)} сотрудниками")
-                await asyncio.sleep(0.1)  # Небольшая задержка для имитации потоковой передачи
+                await asyncio.sleep(0.005)  # Небольшая задержка для имитации потоковой передачи
             else:
                 logger.warning(f"Координаты для города {city} не найдены")
 
