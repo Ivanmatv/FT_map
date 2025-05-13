@@ -21,6 +21,7 @@ logger = get_logger()
 REDMINE_URL = "https://tasks.fut.ru"
 API_KEY = os.getenv("API_KEY")
 PASSWORD = os.getenv("PASSWORD")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
 if not API_KEY:
     logger.error("API_KEY not found in .env file or is empty")
@@ -29,6 +30,10 @@ if not API_KEY:
 if not PASSWORD:
     logger.error("PASSWORD not found in .env file or is empty")
     raise ValueError("PASSWORD not found in .env file or is empty")
+
+if not ADMIN_PASSWORD:
+    logger.error("ADMIN_PASSWORD not found in .env file or is empty")
+    raise ValueError("ADMIN_PASSWORD not found in .env file or is empty")
 
 app = FastAPI()
 
@@ -40,6 +45,9 @@ DB_PATH = "users.db"
 
 # Хранилище токена авторизации
 token_store = {}
+
+# Хранилище токенов для админ-панели
+admin_token_store = {}
 
 # Хранилище прогресса для задач
 progress_store = {}
@@ -58,6 +66,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 # Инициализация базы данных
 init_db()
 
@@ -65,6 +74,11 @@ init_db()
 # Модель для проверки пароля
 class LoginRequest(BaseModel):
     password: str
+
+
+# Модель для проверки токена
+class TokenRequest(BaseModel):
+    token: str
 
 
 # Проверка авторизации
@@ -216,6 +230,7 @@ def process_users(start_id: int, end_id: int, task_id: str):
         logger.debug(f"Task {task_id}: Cleaning up progress_store")
         progress_store.pop(task_id, None)
 
+
 # Эндпоинт для авторизации
 @app.post("/login")
 async def login(request: Request):
@@ -226,12 +241,35 @@ async def login(request: Request):
         return {"status": "success", "token": token}
     return {"status": "error", "message": "Неверный пароль"}
 
+
 @app.post("/check_token")
 async def check_token(request: Request):
     data = await request.json()
     token = data.get("token")
     if token in token_store:
         return {"status": "success"}
+    return {"status": "error", "message": "Недействительный токен"}
+
+
+# Эндпоинт для авторизации в админ-панели
+@app.post("/admin_login")
+async def admin_login(login_request: LoginRequest):
+    if login_request.password == ADMIN_PASSWORD:
+        token = secrets.token_urlsafe(32)
+        admin_token_store[token] = True
+        logger.info("Успешная авторизация в админ-панели")
+        return {"status": "success", "token": token}
+    logger.warning("Неудачная попытка авторизации в админ-панели")
+    return {"status": "error", "message": "Неверный пароль"}
+
+
+# Эндпоинт для проверки токена админ-панели
+@app.post("/check_admin_token")
+async def check_admin_token(token_request: TokenRequest):
+    if token_request.token in admin_token_store:
+        logger.debug("Токен админ-панели действителен")
+        return {"status": "success"}
+    logger.warning("Недействительный токен админ-панели")
     return {"status": "error", "message": "Недействительный токен"}
 
 
@@ -265,12 +303,20 @@ async def get_home():
         html_content = file.read()
     return HTMLResponse(content=html_content)
 
-# Страница для добавления сотрудников
+
+# Страница админ-панели
 @app.get("/admin", response_class=HTMLResponse)
-async def get_admin_panel():
+async def get_admin_panel(request: Request):
+    admin_token = request.cookies.get("admin_token")
+    if not admin_token or admin_token not in admin_token_store:
+        logger.warning("Попытка доступа к админ-панели без авторизации")
+        with open(os.path.join("app", "static", "admin.html"), "r", encoding="utf-8") as file:
+            html_content = file.read()
+        return HTMLResponse(content=html_content)
     with open(os.path.join("app", "static", "admin.html"), "r", encoding="utf-8") as file:
         html_content = file.read()
     return HTMLResponse(content=html_content)
+
 
 # WebSocket для отправки данных карты в реальном времени
 @app.websocket("/ws/map")
@@ -316,6 +362,7 @@ async def websocket_map(websocket: WebSocket):
         await websocket.send_json({'status': 'error', 'message': str(e)})
     finally:
         await websocket.close()
+
 
 # Эндпоинт для карты
 @app.get("/map", response_class=HTMLResponse)

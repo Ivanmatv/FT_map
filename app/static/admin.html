@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FutureToday Map - Админ-панель</title>
+    <title>Админ-панель</title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
         * {
@@ -187,110 +187,190 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Добавить новых сотрудников</h1>
+    <div id="loginContainer" class="container">
+        <h1>Вход в админ-панель</h1>
+        <p>Введите пароль для доступа к функциям администратора</p>
         <div class="form-container">
-            <h2>Введите диапазон ID</h2>
             <div class="form-group">
-                <label for="start_id">Начальный ID</label>
-                <input type="number" id="start_id" placeholder="Например, 1000" required>
+                <label for="adminPassword">Пароль</label>
+                <input type="password" id="adminPassword" placeholder="Введите пароль" required>
             </div>
-            <div class="form-group">
-                <label for="end_id">Конечный ID</label>
-                <input type="number" id="end_id" placeholder="Например, 2000" required>
-            </div>
-            <button class="btn" onclick="addUsers()">Добавить сотрудников</button>
-            <div class="progress-container" id="progress-container">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progress-fill"></div>
-                </div>
-                <div class="progress-text" id="progress-text">Обработка: 0%</div>
-            </div>
+            <button class="btn" onclick="adminLogin()">Войти</button>
             <div id="message" class="message"></div>
-            <a href="/" class="btn" style="margin-top: 20px;">Вернуться на главную</a>
         </div>
+        <a href="/" class="btn">Вернуться на главную</a>
+    </div>
+    <div id="adminContainer" class="container" style="display: none;">
+        <h1>Админ-панель</h1>
+        <div class="form-container">
+            <h2>Добавить новых сотрудников</h2>
+            <form id="addUsersForm">
+                <div class="form-group">
+                    <label for="startId">Начальный ID</label>
+                    <input type="number" id="startId" name="startId" required>
+                </div>
+                <div class="form-group">
+                    <label for="endId">Конечный ID</label>
+                    <input type="number" id="endId" name="endId" required>
+                </div>
+                <button type="submit" class="btn">Добавить сотрудников</button>
+            </form>
+            <div id="progressContainer" class="progress-container">
+                <p id="progressText" class="progress-text">Обработка: 0%</p>
+                <div class="progress-bar">
+                    <div id="progress" class="progress-fill"></div>
+                </div>
+            </div>
+        </div>
+        <a href="/" class="btn">Вернуться на главную</a>
     </div>
 
     <script>
-        async function addUsers() {
-            const startId = document.getElementById('start_id').value;
-            const endId = document.getElementById('end_id').value;
-            const messageDiv = document.getElementById('message');
-            const progressContainer = document.getElementById('progress-container');
-            const progressFill = document.getElementById('progress-fill');
-            const progressText = document.getElementById('progress-text');
-
-            if (!startId || !endId || startId < 1 || endId < startId) {
-                messageDiv.className = 'message error';
-                messageDiv.textContent = 'Пожалуйста, введите корректный диапазон ID.';
-                return;
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
             }
+            return cookieValue;
+        }
 
-            messageDiv.className = 'message';
-            messageDiv.textContent = '';
-            progressContainer.className = 'progress-container active';
-            progressFill.style.width = '0%';
-            progressText.textContent = 'Обработка: 0%';
+        function setCookie(name, value, days) {
+            let expires = "";
+            if (days) {
+                const date = new Date();
+                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                expires = "; expires=" + date.toUTCString();
+            }
+            document.cookie = name + "=" + (value || "") + expires + "; path=/";
+        }
+
+        async function adminLogin() {
+            const password = document.getElementById('adminPassword').value;
+            const messageDiv = document.getElementById('message');
 
             try {
-                const taskId = Date.now().toString();
-                console.log(`Starting task with task_id: ${taskId}`);
+                const response = await fetch('/admin_login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ password: password })
+                });
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    setCookie('admin_token', data.token, 1);
+                    document.getElementById('loginContainer').style.display = 'none';
+                    document.getElementById('adminContainer').style.display = 'block';
+                } else {
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = data.message;
+                }
+            } catch (error) {
+                messageDiv.className = 'message error';
+                messageDiv.textContent = 'Ошибка сети. Попробуйте снова.';
+            }
+        }
+
+        // Проверка cookie при загрузке страницы
+        const adminToken = getCookie('admin_token');
+        if (adminToken) {
+            fetch('/check_admin_token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ token: adminToken })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    document.getElementById('loginContainer').style.display = 'none';
+                    document.getElementById('adminContainer').style.display = 'block';
+                } else {
+                    document.getElementById('loginContainer').style.display = 'block';
+                }
+            })
+            .catch(error => {
+                document.getElementById('loginContainer').style.display = 'block';
+            });
+        } else {
+            document.getElementById('loginContainer').style.display = 'block';
+        }
+
+        document.getElementById('addUsersForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const startId = document.getElementById('startId').value;
+            const endId = document.getElementById('endId').value;
+            const taskId = 'task_' + Date.now();
+
+            try {
                 const response = await fetch('/add_users', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ start_id: parseInt(startId), end_id: parseInt(endId), task_id: taskId }),
+                    body: JSON.stringify({ start_id: parseInt(startId), end_id: parseInt(endId), task_id: taskId })
                 });
 
                 const result = await response.json();
-
-                if (!response.ok) {
+                if (result.status === 'success') {
+                    document.getElementById('progressContainer').classList.add('active');
+                    checkProgress(taskId, parseInt(startId), parseInt(endId));
+                } else {
+                    const messageDiv = document.createElement('div');
                     messageDiv.className = 'message error';
-                    messageDiv.textContent = result.message || 'Ошибка при добавлении сотрудников.';
-                    progressContainer.className = 'progress-container';
-                    return;
+                    messageDiv.textContent = result.message;
+                    document.getElementById('progressContainer').before(messageDiv);
                 }
-
-                const totalIds = endId - startId + 1;
-                const pollProgress = async () => {
-                    try {
-                        const progressResponse = await fetch(`/progress/${taskId}`);
-                        const progressData = await progressResponse.json();
-                        console.log(`Progress for task ${taskId}:`, progressData);
-                        const progress = progressData.progress || 0;
-                        const percentage = Math.min((progress / totalIds) * 100, 100).toFixed(1);
-                        progressFill.style.width = `${percentage}%`;
-                        progressText.textContent = `Обработка: ${percentage}% (${progress}/${totalIds})`;
-
-                        if (progress < totalIds && !progressData.error) {
-                            setTimeout(pollProgress, 1000);
-                        } else {
-                            progressContainer.className = 'progress-container';
-                            if (progressData.error) {
-                                messageDiv.className = 'message error';
-                                messageDiv.textContent = progressData.message || 'Ошибка при обработке.';
-                            } else {
-                                const addedCount = progressData.added_count || 0;
-                                messageDiv.className = 'message success';
-                                messageDiv.textContent = `Добавлено ${addedCount} новых сотрудников!`;
-                            }
-                        }
-                    } catch (error) {
-                        console.error(`Error polling progress for task ${taskId}:`, error);
-                        progressContainer.className = 'progress-container';
-                        messageDiv.className = 'message error';
-                        messageDiv.textContent = 'Ошибка при получении прогресса.';
-                    }
-                };
-
-                pollProgress();
             } catch (error) {
-                console.error('Error starting task:', error);
+                const messageDiv = document.createElement('div');
                 messageDiv.className = 'message error';
-                messageDiv.textContent = 'Ошибка сети. Попробуйте снова.';
-                progressContainer.className = 'progress-container';
+                messageDiv.textContent = 'Ошибка при добавлении сотрудников';
+                document.getElementById('progressContainer').before(messageDiv);
             }
+        });
+
+        async function checkProgress(taskId, startId, endId) {
+            const totalUsers = endId - startId + 1;
+            const progressBar = document.getElementById('progress');
+            const progressText = document.getElementById('progressText');
+
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/progress/${taskId}`);
+                    const progress = await response.json();
+
+                    const percentage = Math.min((progress.progress / totalUsers) * 100, 100);
+                    progressBar.style.width = percentage + '%';
+                    progressText.textContent = `Обработка: ${Math.round(percentage)}%`;
+
+                    if (progress.progress >= totalUsers || progress.error) {
+                        clearInterval(interval);
+                        progressBar.style.width = '100%';
+                        progressText.textContent = progress.error 
+                            ? `Ошибка: ${progress.message}` 
+                            : `Обработка завершена: добавлено ${progress.added_count} сотрудников`;
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = progress.error ? 'message error' : 'message success';
+                        messageDiv.textContent = progressText.textContent;
+                        document.getElementById('progressContainer').before(messageDiv);
+                    }
+                } catch (error) {
+                    clearInterval(interval);
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = 'Ошибка при получении прогресса';
+                    document.getElementById('progressContainer').before(messageDiv);
+                }
+            }, 1000);
         }
     </script>
 </body>
