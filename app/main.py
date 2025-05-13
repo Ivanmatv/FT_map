@@ -1,14 +1,15 @@
 import requests
 import geocoder
-from fastapi import FastAPI, BackgroundTasks, WebSocket
+from fastapi import FastAPI, BackgroundTasks, WebSocket, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os
-from dotenv import load_dotenv
 import sqlite3
 import time
 import asyncio
+import secrets
+from dotenv import load_dotenv
 from .logger import get_logger
 
 # Загружаем переменные из .env
@@ -19,9 +20,15 @@ logger = get_logger()
 
 REDMINE_URL = "https://tasks.fut.ru"
 API_KEY = os.getenv("API_KEY")
+PASSWORD = os.getenv("PASSWORD")
+
 if not API_KEY:
     logger.error("API_KEY not found in .env file or is empty")
     raise ValueError("API_KEY not found in .env file or is empty")
+
+if not PASSWORD:
+    logger.error("PASSWORD not found in .env file or is empty")
+    raise ValueError("PASSWORD not found in .env file or is empty")
 
 app = FastAPI()
 
@@ -30,6 +37,9 @@ app.mount("/static", StaticFiles(directory=os.path.join("app", "static")), name=
 
 # Подключение к SQLite базе данных
 DB_PATH = "users.db"
+
+# Хранилище токена авторизации
+token_store = {}
 
 # Хранилище прогресса для задач
 progress_store = {}
@@ -50,6 +60,25 @@ def init_db():
 
 # Инициализация базы данных
 init_db()
+
+
+# Модель для проверки пароля
+class LoginRequest(BaseModel):
+    password: str
+
+
+# Проверка авторизации
+async def check_auth(request: Request):
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        logger.debug("Отсутствует session_id в cookies")
+        raise HTTPException(status_code=401, detail="Не авторизован")
+    session_data = await sessions.get_session(session_id)
+    if not session_data or not session_data.get("authenticated"):
+        logger.debug(f"Недействительная сессия: {session_id}")
+        raise HTTPException(status_code=401, detail="Не авторизован")
+    return session_id
+
 
 # Функция для получения данных из Redmine API
 def get_user_data(user_id: int) -> dict:
@@ -186,6 +215,25 @@ def process_users(start_id: int, end_id: int, task_id: str):
         time.sleep(2)  # Даём клиенту время получить финальный прогресс
         logger.debug(f"Task {task_id}: Cleaning up progress_store")
         progress_store.pop(task_id, None)
+
+# Эндпоинт для авторизации
+@app.post("/login")
+async def login(request: Request):
+    data = await request.json()
+    if data.get("password") == PASSWORD:
+        token = secrets.token_urlsafe(32)
+        token_store[token] = True
+        return {"status": "success", "token": token}
+    return {"status": "error", "message": "Неверный пароль"}
+
+@app.post("/check_token")
+async def check_token(request: Request):
+    data = await request.json()
+    token = data.get("token")
+    if token in token_store:
+        return {"status": "success"}
+    return {"status": "error", "message": "Недействительный токен"}
+
 
 # Эндпоинт для получения прогресса
 @app.get("/progress/{task_id}")

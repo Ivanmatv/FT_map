@@ -1,5 +1,6 @@
 import requests
 
+
 # URL Redmine API для пользователя с ID 956
 url = "https://tasks.fut.ru/users/1221.json"
 headers = {'X-Redmine-API-Key': 'fc3fb4d72858a7dbbf747dceb6e99325dbed58b2'}  # Замените на ваш API ключ

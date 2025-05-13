@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FutureToday Map - Главная</title>
+    <title>FutureToday Map - Авторизация</title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
         * {
@@ -72,6 +72,74 @@
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
         }
 
+        .login-container {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 10px;
+        }
+
+        .login-container label {
+            display: block;
+            font-size: 1em;
+            color: #555;
+            margin: 10px 0 5px;
+        }
+
+        .login-container input {
+            width: 100%;
+            padding: 10px;
+            font-size: 1em;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .login-container input:focus {
+            border-color: #3498db;
+        }
+
+        .login-container button {
+            padding: 12px 30px;
+            background: #3498db;
+            color: #fff;
+            border: none;
+            border-radius: 25px;
+            font-size: 1.1em;
+            font-weight: 400;
+            transition: background 0.3s, transform 0.2s, box-shadow 0.3s;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .login-container button:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .login-container button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .message {
+            margin-top: 15px;
+            font-size: 1em;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .message.error {
+            background: #ffebee;
+            color: #c62828;
+            display: block;
+        }
+
         @keyframes fadeIn {
             from {
                 opacity: 0;
@@ -104,11 +172,101 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <div id="loginContainer" class="container" style="display: none;">
+        <h1>Вход в FutureToday Map</h1>
+        <p>Введите пароль для доступа к приложению</p>
+        <div class="login-container">
+            <label for="password">Пароль</label>
+            <input type="password" id="password" placeholder="Введите пароль" required>
+            <button onclick="login()">Войти</button>
+            <div id="message" class="message"></div>
+        </div>
+    </div>
+    <div id="mainContainer" class="container" style="display: none;">
         <h1>Добро пожаловать в FutureToday Map</h1>
         <p>Это приложение отображает местоположение сотрудников на интерактивной карте. Узнайте, где находятся ваши коллеги!</p>
-        <a href="/map" class="btn" target="_blank">Перейти к карте сотрудников</a>
+        <a href="/map" class="btn">Перейти к карте сотрудников</a>
         <a href="/admin" class="btn">Администратор</a>
     </div>
+
+    <script>
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        function setCookie(name, value, days) {
+            let expires = "";
+            if (days) {
+                const date = new Date();
+                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                expires = "; expires=" + date.toUTCString();
+            }
+            document.cookie = name + "=" + (value || "") + expires + "; path=/";
+        }
+
+        function login() {
+            const password = document.getElementById('password').value;
+            const messageDiv = document.getElementById('message');
+
+            fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ password: password })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    setCookie('auth_token', data.token, 1);
+                    document.getElementById('loginContainer').style.display = 'none';
+                    document.getElementById('mainContainer').style.display = 'block';
+                } else {
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = data.message;
+                }
+            })
+            .catch(error => {
+                messageDiv.className = 'message error';
+                messageDiv.textContent = 'Ошибка сети. Попробуйте снова.';
+            });
+        }
+
+        // Проверка cookie при загрузке страницы
+        const token = getCookie('auth_token');
+        if (token) {
+            fetch('/check_token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ token: token })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    document.getElementById('mainContainer').style.display = 'block';
+                } else {
+                    document.getElementById('loginContainer').style.display = 'block';
+                }
+            })
+            .catch(error => {
+                document.getElementById('loginContainer').style.display = 'block';
+            });
+        } else {
+            document.getElementById('loginContainer').style.display = 'block';
+        }
+    </script>
 </body>
 </html>
