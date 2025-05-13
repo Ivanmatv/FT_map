@@ -1,157 +1,148 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-    <meta charset="utf-8">
-    <title>Employees Map</title>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Карта сотрудников</title>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=ec42c457-c28e-4138-a645-905b64b63771&lang=ru_RU"></script>
     <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
+        #map {
+            width: 100%;
+            height: 100vh;
         }
         #sidebar {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 300px;
-            height: 100%;
-            overflow-y: auto;
-            background: #f8f8f8;
-            border-right: 1px solid #ccc;
-            padding: 10px;
-            box-sizing: border-box;
-            z-index: 1000;
-            transition: transform 0.3s ease-in-out;
-        }
-        #sidebar.hidden {
-            transform: translateX(-100%);
-        }
-        #map {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            z-index: 500;
-        }
-        #sidebar-toggle {
-            position: absolute;
+            position: fixed;
             top: 10px;
-            left: 10px;
-            padding: 8px 12px;
-            background: #3498db;
-            color: white;
-            border: none;
-            border-radius: 5px;
+            right: 10px;
+            width: 300px;
+            max-height: 80vh;
+            overflow-y: auto;
+            background: white;
+            padding: 10px;
+            border: 1px solid #ccc;
+            display: none;
+        }
+        #toggleSidebar {
+            position: fixed;
+            top: 10px;
+            right: 320px;
+            padding: 5px 10px;
             cursor: pointer;
-            z-index: 1500;
-            font-size: 0.9em;
-        }
-        #sidebar-toggle.hidden {
-            left: 10px;
-        }
-        #sidebar h3 {
-            margin-top: 0;
-        }
-        #employeeList li {
-            padding: 4px 0;
-            border-bottom: 1px solid #ddd;
-        }
-        @media (max-width: 768px) {
-            #sidebar {
-                width: 200px;
-            }
-            #sidebar.hidden + #map {
-                left: 0;
-            }
-            #sidebar-toggle {
-                display: block;
-            }
-        }
-        @media (min-width: 769px) {
-            #sidebar-toggle {
-                display: none;
-            }
-            #sidebar.hidden {
-                transform: none;
-            }
-            #map {
-                left: 300px;
-            }
         }
     </style>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
-    <button id="sidebar-toggle">Показать сайдбар</button>
-    <div id="sidebar" class="hidden">
-        <h3>Сотрудники</h3>
-        <ul id="employeeList"></ul>
+    <button id="toggleSidebar">Показать сайдбар</button>
+    <div id="sidebar">
+        <h2>Сотрудники</h2>
+        <div id="employeeList"></div>
     </div>
     <div id="map"></div>
+
     <script>
-        var map = L.map('map').setView([55.7558, 37.6173], 5);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
+        let myMap;
+        let objectManager;
 
-        function showEmployees(city, employees) {
-            var list = document.getElementById("employeeList");
-            list.innerHTML = `<h3>Сотрудники в городе ${city}</h3>`;
-            employees.forEach(function(emp) {
-                var li = document.createElement("li");
-                li.innerHTML = `<strong>${emp.name}</strong><br>Email: ${emp.email}`;
-                list.appendChild(li);
+        // Инициализация карты
+        ymaps.ready(function () {
+            myMap = new ymaps.Map("map", {
+                center: [55.751574, 37.573856], // Москва по умолчанию
+                zoom: 4,
+                controls: ['zoomControl']
+            }, {
+                mapType: 'yandex#map' // Карта без политических границ
             });
-        }
 
-        var sidebar = document.getElementById('sidebar');
-        var toggleButton = document.getElementById('sidebar-toggle');
-        toggleButton.addEventListener('click', function() {
-            if (sidebar.classList.contains('hidden')) {
-                sidebar.classList.remove('hidden');
-                toggleButton.textContent = 'Скрыть сайдбар';
-                toggleButton.classList.remove('hidden');
-            } else {
-                sidebar.classList.add('hidden');
-                toggleButton.textContent = 'Показать сайдбар';
-                toggleButton.classList.add('hidden');
-            }
-            map.invalidateSize();
+            // Создаем ObjectManager для управления метками
+            objectManager = new ymaps.ObjectManager({
+                clusterize: true, // Включаем кластеризацию
+                gridSize: 32,
+                clusterDisableClickZoom: false
+            });
+
+            myMap.geoObjects.add(objectManager);
+
+            // Подключение к WebSocket
+            connectWebSocket();
         });
 
-        var ws = new WebSocket("ws://" + window.location.host + "/ws/map");
-        ws.onmessage = function(event) {
-            var data = JSON.parse(event.data);
-            console.log("Получены данные:", data);
-            if (data.status === 'complete') {
-                console.log("Все данные карты получены");
-                return;
-            }
-            if (data.status === 'error') {
-                console.error("Ошибка:", data.message);
-                return;
-            }
-            var marker = L.marker(data.coordinates)
-                .addTo(map)
-                .bindPopup(data.city);
-            marker.on('click', function() {
-                console.log("Маркер для города " + data.city + " нажат");
-                showEmployees(data.city, data.employees);
-                if (window.innerWidth <= 768) {
-                    sidebar.classList.remove('hidden');
-                    toggleButton.textContent = 'Скрыть сайдбар';
-                    toggleButton.classList.remove('hidden');
+        // Подключение к WebSocket
+        function connectWebSocket() {
+            const ws = new WebSocket(`ws://${window.location.host}/ws/map`);
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+
+                if (data.status === 'complete') {
+                    ws.close();
+                    return;
+                } else if (data.status === 'error') {
+                    console.error('Ошибка:', data.message);
+                    return;
                 }
+
+                // Добавляем метку на карту
+                const feature = {
+                    type: 'Feature',
+                    id: data.city,
+                    geometry: {
+                        type: 'Point',
+                        coordinates: data.coordinates
+                    },
+                    properties: {
+                        hintContent: data.city,
+                        balloonContent: generateBalloonContent(data.city, data.employees)
+                    }
+                };
+                objectManager.add(feature);
+
+                // Обновляем центр карты после добавления первой метки
+                if (objectManager.objects.getLength() === 1) {
+                    myMap.setCenter(data.coordinates, 6);
+                }
+            };
+
+            ws.onerror = function(error) {
+                console.error('Ошибка WebSocket:', error);
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket соединение закрыто');
+            };
+        }
+
+        // Генерация содержимого балуна и обновление сайдбара
+        function generateBalloonContent(city, employees) {
+            let content = `<h3>${city}</h3><ul>`;
+            employees.forEach(emp => {
+                content += `<li>${emp.name} (${emp.email})</li>`;
             });
-        };
-        ws.onclose = function() {
-            console.log("WebSocket соединение закрыто");
-        };
-        ws.onerror = function(error) {
-            console.error("WebSocket ошибка:", error);
-        };
+            content += '</ul>';
+            updateSidebar(city, employees);
+            return content;
+        }
+
+        // Обновление сайдбара
+        function updateSidebar(city, employees) {
+            const employeeList = document.getElementById('employeeList');
+            const citySection = document.createElement('div');
+            citySection.innerHTML = `<h3>${city}</h3><ul>` + 
+                employees.map(emp => `<li>${emp.name} (${emp.email})</li>`).join('') + 
+                '</ul>';
+            employeeList.appendChild(citySection);
+        }
+
+        // Переключение видимости сайдбара
+        document.getElementById('toggleSidebar').addEventListener('click', function() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar.style.display === 'none' || sidebar.style.display === '') {
+                sidebar.style.display = 'block';
+                this.textContent = 'Скрыть сайдбар';
+            } else {
+                sidebar.style.display = 'none';
+                this.textContent = 'Показать сайдбар';
+            }
+        });
     </script>
 </body>
 </html>
