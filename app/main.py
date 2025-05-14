@@ -52,6 +52,7 @@ admin_token_store = {}
 # Хранилище прогресса для задач
 progress_store = {}
 
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -81,19 +82,6 @@ class TokenRequest(BaseModel):
     token: str
 
 
-# Проверка авторизации
-async def check_auth(request: Request):
-    session_id = request.cookies.get("session_id")
-    if not session_id:
-        logger.debug("Отсутствует session_id в cookies")
-        raise HTTPException(status_code=401, detail="Не авторизован")
-    session_data = await sessions.get_session(session_id)
-    if not session_data or not session_data.get("authenticated"):
-        logger.debug(f"Недействительная сессия: {session_id}")
-        raise HTTPException(status_code=401, detail="Не авторизован")
-    return session_id
-
-
 # Функция для получения данных из Redmine API
 def get_user_data(user_id: int) -> dict:
     url = f"{REDMINE_URL}/users/{user_id}.json"
@@ -105,6 +93,7 @@ def get_user_data(user_id: int) -> dict:
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching data for user {user_id}: {e}")
         return None
+
 
 # Функция для очистки названий городов
 def clean_city_name(city):
@@ -124,6 +113,7 @@ def clean_city_name(city):
         "Нови Сад, Сербия": "Нови Сад",
     }
     return mapping.get(city, city)
+
 
 # Функция для получения данных из базы или API
 def get_or_fetch_user_data(user_id: int):
@@ -168,18 +158,25 @@ def get_or_fetch_user_data(user_id: int):
     logger.warning(f"User {user_id} not found in API")
     return None
 
+
 # Функция для получения всех сотрудников
 def get_all_employees():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, email, city FROM employees")
     employees = [
-        {'id': row[0], 'name': row[1], 'email': row[2], 'city': row[3]}
+        {
+            'id': row[0],
+            'name': row[1],
+            'profile_url': f"{REDMINE_URL}/users/{row[0]}",  # Заменяем email на ссылку
+            'city': row[3]
+        }
         for row in cursor.fetchall()
     ]
     conn.close()
     logger.info(f"Извлечено {len(employees)} сотрудников из базы данных")
     return employees
+
 
 # Функция для получения координат города
 def get_coordinates(city: str, cache: dict) -> list:
@@ -196,11 +193,13 @@ def get_coordinates(city: str, cache: dict) -> list:
     logger.warning(f"Город {city} не найден в геокодере")
     return None
 
+
 # Модель для валидации входных данных
 class UserRange(BaseModel):
     start_id: int
     end_id: int
     task_id: str
+
 
 # Функция для фоновой обработки пользователей
 def process_users(start_id: int, end_id: int, task_id: str):
@@ -280,6 +279,7 @@ async def get_progress(task_id: str):
     logger.debug(f"Progress requested for task {task_id}: {progress}")
     return progress
 
+
 # Эндпоинт для добавления новых сотрудников
 @app.post("/add_users")
 async def add_users(user_range: UserRange, background_tasks: BackgroundTasks):
@@ -295,6 +295,7 @@ async def add_users(user_range: UserRange, background_tasks: BackgroundTasks):
     background_tasks.add_task(process_users, start_id, end_id, task_id)
     logger.info(f"Scheduled background task {task_id} for range {start_id}-{end_id}")
     return {"message": "Обработка запущена", "task_id": task_id, "status": "success"}
+
 
 # Главная страница
 @app.get("/", response_class=HTMLResponse)
@@ -334,7 +335,7 @@ async def websocket_map(websocket: WebSocket):
                     city_employees[city] = []
                 city_employees[city].append({
                     'name': employee['name'],
-                    'email': employee['email']
+                    'profile_url': employee['profile_url']  # Заменяем email на ссылку
                 })
                 logger.info(f"Сгруппировано {len(city_employees[city])} сотрудников для города {city}")
             else:

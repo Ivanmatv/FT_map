@@ -113,12 +113,11 @@
 
         // Генерация содержимого балуна и обновление сайдбара
         function generateBalloonContent(city, employees) {
-            let content = `<h3>${city}</h3><ul>`;
-            employees.forEach(emp => {
-                content += `<li>${emp.name} (${emp.email})</li>`;
+            let content = '<ul>';
+            employees.forEach(employee => {
+                content += `<li>${employee.name} (<a href="${employee.profile_url}" target="_blank">Профиль</a>)</li>`;
             });
             content += '</ul>';
-            updateSidebar(city, employees);
             return content;
         }
 
