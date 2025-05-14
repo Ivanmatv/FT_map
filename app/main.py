@@ -64,6 +64,13 @@ def init_db():
             city TEXT NOT NULL
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS visits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            visitor_id TEXT NOT NULL,
+            visit_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -80,6 +87,13 @@ class LoginRequest(BaseModel):
 # Модель для проверки токена
 class TokenRequest(BaseModel):
     token: str
+
+
+# Модель для валидации входных данных
+class UserRange(BaseModel):
+    start_id: int
+    end_id: int
+    task_id: str
 
 
 # Функция для получения данных из Redmine API
@@ -194,13 +208,6 @@ def get_coordinates(city: str, cache: dict) -> list:
     return None
 
 
-# Модель для валидации входных данных
-class UserRange(BaseModel):
-    start_id: int
-    end_id: int
-    task_id: str
-
-
 # Функция для фоновой обработки пользователей
 def process_users(start_id: int, end_id: int, task_id: str):
     logger.info(f"Starting background task {task_id} for range {start_id}-{end_id}")
@@ -228,6 +235,34 @@ def process_users(start_id: int, end_id: int, task_id: str):
         time.sleep(2)  # Даём клиенту время получить финальный прогресс
         logger.debug(f"Task {task_id}: Cleaning up progress_store")
         progress_store.pop(task_id, None)
+
+
+# Функция подсчёта уникальных посетителей
+def get_unique_visitors():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(DISTINCT visitor_id) FROM visits")
+    unique_count = cursor.fetchone()[0]
+    conn.close()
+    return unique_count
+
+
+# Функция подсчёта посетителей
+def get_total_visits():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM visits")
+    total_count = cursor.fetchone()[0]
+    conn.close()
+    return total_count
+
+
+# Эндпоинт для подсчёта посетитлей
+@app.get("/admin_stats")
+async def get_admin_stats():
+    unique_visitors = get_unique_visitors()
+    total_visits = get_total_visits()
+    return {"unique_visitors": unique_visitors, "total_visits": total_visits}
 
 
 # Эндпоинт для авторизации

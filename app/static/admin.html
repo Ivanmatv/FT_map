@@ -222,6 +222,11 @@
                 </div>
             </div>
         </div>
+        <div id="stats">
+            <h2>Статистика посещений</h2>
+            <p>Уникальных посетителей: <span id="unique_visitors">0</span></p>
+            <p>Общее количество посещений: <span id="total_visits">0</span></p>
+        </div>
         <a href="/" class="btn">Вернуться на главную</a>
     </div>
 
@@ -277,6 +282,13 @@
                 messageDiv.className = 'message error';
                 messageDiv.textContent = 'Ошибка сети. Попробуйте снова.';
             }
+        }
+
+        async function loadStats() {
+            const response = await fetch('/admin_stats');
+            const data = await response.json();
+            document.getElementById('unique_visitors').textContent = data.unique_visitors;
+            document.getElementById('total_visits').textContent = data.total_visits;
         }
 
         // Проверка cookie при загрузке страницы
