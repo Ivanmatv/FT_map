@@ -1,6 +1,6 @@
 import requests
 import geocoder
-from fastapi import FastAPI, BackgroundTasks, WebSocket, HTTPException, Request
+from fastapi import FastAPI, BackgroundTasks, WebSocket, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -51,6 +51,9 @@ admin_token_store = {}
 
 # Хранилище прогресса для задач
 progress_store = {}
+
+# Глобальный кэш для данных карты
+map_data_cache = {}
 
 
 def init_db():
@@ -222,9 +225,10 @@ def process_users(start_id: int, end_id: int, task_id: str):
             progress_store[task_id]['progress'] += 1
             progress_store[task_id]['added_count'] = added_count
             logger.debug(f"Task {task_id}: Processed user {user_id}, progress {progress_store[task_id]['progress']}, added {added_count}")
-            time.sleep(0.5)  # Задержка для избежания лимитов API
+            time.sleep(0.5)
 
         logger.info(f"Task {task_id}: Added {added_count} new employees from range {start_id}-{end_id}")
+        update_map_data_cache()  # Обновляем кэш после добавления сотрудников
 
     except Exception as e:
         progress_store[task_id]['error'] = True
@@ -232,7 +236,7 @@ def process_users(start_id: int, end_id: int, task_id: str):
         logger.error(f"Task {task_id}: Error processing users: {e}")
 
     finally:
-        time.sleep(2)  # Даём клиенту время получить финальный прогресс
+        time.sleep(2)
         logger.debug(f"Task {task_id}: Cleaning up progress_store")
         progress_store.pop(task_id, None)
 
@@ -255,6 +259,62 @@ def get_total_visits():
     total_count = cursor.fetchone()[0]
     conn.close()
     return total_count
+
+
+# Функция для обновления кэша данных карты
+def update_map_data_cache():
+    global map_data_cache
+    logger.info("Обновление кэша данных карты")
+    employees = get_all_employees()
+    city_employees = {}
+    coordinates_cache = {}
+
+    for employee in employees:
+        city = clean_city_name(employee['city'])
+        if city:
+            if city not in city_employees:
+                city_employees[city] = []
+            city_employees[city].append({
+                'name': employee['name'],
+                'profile_url': employee['profile_url']
+            })
+            logger.debug(f"Сгруппирован сотрудник {employee['name']} для города {city}")
+
+    map_data_cache = []
+    for city, emp_list in city_employees.items():
+        emp_list.sort(key=lambda x: x['name'])
+        coordinates = get_coordinates(city, coordinates_cache)
+        if coordinates:
+            marker_data = {
+                'city': city,
+                'coordinates': coordinates,
+                'employees': emp_list
+            }
+            map_data_cache.append(marker_data)
+            logger.info(f"Добавлены данные в кэш для города {city} с {len(emp_list)} сотрудниками")
+        else:
+            logger.warning(f"Координаты для города {city} не найдены")
+
+    logger.info("Кэш данных карты успешно обновлён")
+
+
+# Функция для периодического обновления кэша
+async def periodic_cache_update():
+    while True:
+        update_map_data_cache()
+        await asyncio.sleep(7200)  # Обновление каждые 60 минут
+
+
+# Запуск кэша при старте приложения
+@app.on_event("startup")
+async def startup_event():
+    update_map_data_cache()  # Инициализация кэша при старте
+    asyncio.create_task(periodic_cache_update())  # Запуск периодического обновления
+
+
+@app.get("/map_data")
+async def get_map_data():
+    return map_data_cache
 
 
 # Эндпоинт для подсчёта посетитлей
@@ -359,40 +419,12 @@ async def get_admin_panel(request: Request):
 async def websocket_map(websocket: WebSocket):
     await websocket.accept()
     try:
-        employees = get_all_employees()
-        city_employees = {}
-        coordinates_cache = {}
-
-        for employee in employees:
-            city = clean_city_name(employee['city'])
-            if city:
-                if city not in city_employees:
-                    city_employees[city] = []
-                city_employees[city].append({
-                    'name': employee['name'],
-                    'profile_url': employee['profile_url']  # Заменяем email на ссылку
-                })
-                logger.info(f"Сгруппировано {len(city_employees[city])} сотрудников для города {city}")
-            else:
-                logger.warning(f"Сотрудник {employee['name']} пропущен: город не указан")
-
-        for city, emp_list in city_employees.items():
-            emp_list.sort(key=lambda x: x['name'])
-            coordinates = get_coordinates(city, coordinates_cache)
-            if coordinates:
-                marker_data = {
-                    'city': city,
-                    'coordinates': coordinates,
-                    'employees': emp_list
-                }
-                await websocket.send_json(marker_data)
-                logger.info(f"Отправлены данные для города {city} с {len(emp_list)} сотрудниками")
-                await asyncio.sleep(0.005)  # Небольшая задержка для имитации потоковой передачи
-            else:
-                logger.warning(f"Координаты для города {city} не найдены")
-
+        for marker_data in map_data_cache:
+            await websocket.send_json(marker_data)
+            logger.info(f"Отправлены кэшированные данные для города {marker_data['city']}")
+            await asyncio.sleep(0.005)  # Небольшая задержка для имитации потоковой передачи
         await websocket.send_json({'status': 'complete'})
-        logger.info("Все данные карты отправлены")
+        logger.info("Все кэшированные данные карты отправлены")
     except Exception as e:
         logger.error(f"Ошибка в WebSocket: {e}")
         await websocket.send_json({'status': 'error', 'message': str(e)})

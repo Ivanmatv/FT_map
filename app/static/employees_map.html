@@ -43,6 +43,18 @@
         let myMap;
         let objectManager;
 
+        async function loadInitialMapData() {
+            const response = await fetch('/map_data');
+            const markers = await response.json();
+            markers.forEach(marker => {
+                // Логика добавления метки на карту (например, с использованием Leaflet)
+                addMarkerToMap(marker.city, marker.coordinates, marker.employees);
+            });
+        }
+
+        // Вызов при загрузке страницы
+        document.addEventListener('DOMContentLoaded', loadInitialMapData);
+        
         // Инициализация карты
         ymaps.ready(function () {
             myMap = new ymaps.Map("map", {
