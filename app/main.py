@@ -64,7 +64,9 @@ def init_db():
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
             email TEXT NOT NULL,
-            city TEXT NOT NULL
+            city TEXT NOT NULL,
+            department TEXT,  -- Новое поле: Отдел (опционально)
+            position TEXT    -- Новое поле: Должность (опционально)
         )
     """)
     cursor.execute("""
@@ -136,19 +138,23 @@ def clean_city_name(city):
 def get_or_fetch_user_data(user_id: int):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT name, email, city FROM employees WHERE id = ?", (user_id,))
+    cursor.execute("SELECT name, email, city, department, position FROM employees WHERE id = ?", (user_id,))
     result = cursor.fetchone()
 
     if result:
-        name, email, city = result
-        logger.debug(f"User {user_id} found in database: {name}, {email}, {city}")
+        name, email, city, department, position = result
+        logger.debug(f"User {user_id} found in database: {name}, {email}, {city}, {department}, {position}")
         return {
             'user': {
                 'id': user_id,
                 'firstname': name.split()[0],
                 'lastname': ' '.join(name.split()[1:]),
                 'mail': email,
-                'custom_fields': [{'name': 'Город проживания', 'value': city}]
+                'custom_fields': [
+                    {'name': 'Город проживания', 'value': city},
+                    {'name': 'Отдел', 'value': department or ''},
+                    {'name': 'Должность', 'value': position or ''}
+                ]
             }
         }
 
@@ -159,16 +165,22 @@ def get_or_fetch_user_data(user_id: int):
         if email.endswith('@futuretoday.ru'):
             name = f"{user['firstname']} {user['lastname']}"
             city = "No city"
+            department = None
+            position = None
             for field in user.get('custom_fields', []):
                 if field['name'] == 'Город проживания':
                     city = field.get('value') or "No city"
+                elif field['name'] == 'Отдел':
+                    department = field.get('value') or None
+                elif field['name'] == 'Должность':
+                    position = field.get('value') or None
             city = clean_city_name(city) or "No city"
             cursor.execute("""
-                INSERT OR REPLACE INTO employees (id, name, email, city)
-                VALUES (?, ?, ?, ?)
-            """, (user_id, name, email, city))
+                INSERT OR REPLACE INTO employees (id, name, email, city, department, position)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, name, email, city, department, position))
             conn.commit()
-            logger.info(f"User {user_id} saved to database: {name}, {email}, {city}")
+            logger.info(f"User {user_id} saved to database: {name}, {email}, {city}, {department}, {position}")
             return user_data
 
     conn.close()
@@ -180,13 +192,15 @@ def get_or_fetch_user_data(user_id: int):
 def get_all_employees():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, email, city FROM employees")
+    cursor.execute("SELECT id, name, email, city, department, position FROM employees")
     employees = [
         {
             'id': row[0],
             'name': row[1],
-            'profile_url': f"{REDMINE_URL}/users/{row[0]}",  # Заменяем email на ссылку
-            'city': row[3]
+            'profile_url': f"{REDMINE_URL}/users/{row[0]}",
+            'city': row[3],
+            'department': row[4],
+            'position': row[5]
         }
         for row in cursor.fetchall()
     ]
@@ -274,10 +288,16 @@ def update_map_data_cache():
         if city:
             if city not in city_employees:
                 city_employees[city] = []
-            city_employees[city].append({
+            employee_data = {
                 'name': employee['name'],
                 'profile_url': employee['profile_url']
-            })
+            }
+            if employee['department'] and employee['department'] != 'None':
+                employee_data['department'] = employee['department']
+            if employee['position'] and employee['position'] != 'None':
+                employee_data['position'] = employee['position']
+            city_employees[city].append(employee_data)
+
             logger.debug(f"Сгруппирован сотрудник {employee['name']} для города {city}")
 
     map_data_cache = []
@@ -438,3 +458,10 @@ async def get_map():
     with open(os.path.join("app", "static", "employees_map.html"), "r", encoding="utf-8") as file:
         html_content = file.read()
     return HTMLResponse(content=html_content)
+
+
+# Эндпоинт для ручного обнолвления кэша
+@app.get("/refresh_cache")
+async def refresh_cache():
+    update_map_data_cache()
+    return {"message": "Map data cache refreshed"}

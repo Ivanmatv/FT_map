@@ -125,9 +125,17 @@
 
         // Генерация содержимого балуна и обновление сайдбара
         function generateBalloonContent(city, employees) {
+            console.log('Processing employees for city:', city, employees);
             let content = '<ul>';
             employees.forEach(employee => {
-                content += `<li>${employee.name} (<a href="${employee.profile_url}" target="_blank">Профиль</a>)</li>`;
+                let employeeInfo = employee.name;
+                if (employee.department && employee.department !== 'null' && employee.department !== '') {
+                    employeeInfo += `, ${employee.department}`;
+                }
+                if (employee.position && employee.position !== 'null' && employee.position !== '') {
+                    employeeInfo += ` - ${employee.position}`;
+                }
+                content += `<li>${employeeInfo} (<a href="${employee.profile_url}" target="_blank">Профиль</a>)</li>`;
             });
             content += '</ul>';
             return content;
@@ -138,7 +146,7 @@
             const employeeList = document.getElementById('employeeList');
             const citySection = document.createElement('div');
             citySection.innerHTML = `<h3>${city}</h3><ul>` + 
-                employees.map(emp => `<li>${emp.name} (${emp.email})</li>`).join('') + 
+                employees.map(emp => `<li>${emp.name},  (${emp.email})</li>`).join('') + 
                 '</ul>';
             employeeList.appendChild(citySection);
         }
