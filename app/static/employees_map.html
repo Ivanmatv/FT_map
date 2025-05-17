@@ -123,19 +123,26 @@
             };
         }
 
-        // Генерация содержимого балуна и обновление сайдбара
+        // Генерация содержимого балуна
         function generateBalloonContent(city, employees) {
-            console.log('Processing employees for city:', city, employees);
-            let content = '<ul>';
+            let content = `<h2>${city}</h2><ul>`;
             employees.forEach(employee => {
-                let employeeInfo = employee.name;
-                if (employee.department && employee.department !== 'null' && employee.department !== '') {
-                    employeeInfo += `, ${employee.department}`;
+                let employeeInfo = `<strong>${employee.name}</strong>`;
+                
+                // Добавляем отдел, если он есть
+                if (employee.department && employee.department !== 'None' && employee.department !== 'null') {
+                    employeeInfo += `<br>Отдел: ${employee.department}`;
                 }
-                if (employee.position && employee.position !== 'null' && employee.position !== '') {
-                    employeeInfo += ` - ${employee.position}`;
+                
+                // Добавляем должность, если она есть
+                if (employee.position && employee.position !== 'None' && employee.position !== 'null') {
+                    employeeInfo += `<br>Должность: ${employee.position}`;
                 }
-                content += `<li>${employeeInfo} (<a href="${employee.profile_url}" target="_blank">Профиль</a>)</li>`;
+                
+                // Добавляем ссылку на профиль
+                employeeInfo += `<br><a href="${employee.profile_url}" target="_blank">Профиль</a>`;
+                
+                content += `<li>${employeeInfo}</li>`;
             });
             content += '</ul>';
             return content;

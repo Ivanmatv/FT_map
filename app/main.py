@@ -11,6 +11,8 @@ import asyncio
 import secrets
 from dotenv import load_dotenv
 from .logger import get_logger
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # Загружаем переменные из .env
 load_dotenv()
@@ -55,6 +57,18 @@ progress_store = {}
 # Глобальный кэш для данных карты
 map_data_cache = {}
 
+# Добавить в настройки
+GOOGLE_SHEET_KEY = "1ou52dcrOtTu_xtscqQp722T2JaW5Uorsfd0EWcbrQ3E"
+CREDENTIALS_FILE = "credentials.json"  # Файл сервисного аккаунта Google
+
+
+def get_google_sheet():
+    scope = ['https://spreadsheets.google.com/feeds',
+             'https://www.googleapis.com/auth/drive']
+    creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
+    client = gspread.authorize(creds)
+    return client.open_by_key(GOOGLE_SHEET_KEY).sheet1
+
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -98,6 +112,10 @@ class TokenRequest(BaseModel):
 class UserRange(BaseModel):
     start_id: int
     end_id: int
+    task_id: str
+
+
+class SheetTask(BaseModel):
     task_id: str
 
 
@@ -199,8 +217,8 @@ def get_all_employees():
             'name': row[1],
             'profile_url': f"{REDMINE_URL}/users/{row[0]}",
             'city': row[3],
-            'department': row[4],
-            'position': row[5]
+            'department': row[4] if row[4] and row[4] != 'None' else None,
+            'position': row[5] if row[5] and row[5] != 'None' else None
         }
         for row in cursor.fetchall()
     ]
@@ -322,7 +340,45 @@ def update_map_data_cache():
 async def periodic_cache_update():
     while True:
         update_map_data_cache()
-        await asyncio.sleep(7200)  # Обновление каждые 60 минут
+        await asyncio.sleep(1800)  # Обновление каждые 60 минут
+
+
+def process_sheet_update(db_ids, sheet_data, task_id):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        updated_count = 0
+
+        for idx, user_id in enumerate(db_ids):
+            sheet_row = next((row for row in sheet_data if row["#"] == user_id), None)
+            if sheet_row:
+                cursor.execute("""
+                    UPDATE employees SET
+                    department = ?,
+                    position = ?
+                    WHERE id = ?
+                """, (
+                    sheet_row.get("Отдел", ""),
+                    sheet_row.get("Должность", ""),
+                    user_id
+                ))
+                updated_count += 1
+            
+            progress_store[task_id]["processed"] = idx + 1
+            time.sleep(0.1)
+        
+        conn.commit()
+        progress_store[task_id]["message"] = f"Обновлено {updated_count} записей"
+        progress_store[task_id]["status"] = "completed"
+        
+    except Exception as e:
+        progress_store[task_id]["error"] = True
+        progress_store[task_id]["message"] = f"Ошибка: {str(e)}"
+        logger.error(f"Sheet update failed: {str(e)}")
+    finally:
+        conn.close()
+        time.sleep(5)
+        progress_store.pop(task_id, None)
 
 
 # Запуск кэша при старте приложения
@@ -458,6 +514,36 @@ async def get_map():
     with open(os.path.join("app", "static", "employees_map.html"), "r", encoding="utf-8") as file:
         html_content = file.read()
     return HTMLResponse(content=html_content)
+
+
+@app.post("/update_from_sheet")
+async def update_from_sheet(task: SheetTask, background_tasks: BackgroundTasks):
+    try:
+        sheet = get_google_sheet()
+        all_records = sheet.get_all_records()
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM employees")
+        db_ids = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        
+        progress_store[task.task_id] = {
+            "processed": 0,
+            "total": len(db_ids),
+            "message": "",
+            "error": False
+        }
+        
+        background_tasks.add_task(process_sheet_update, db_ids, all_records, task.task_id)
+        return {"status": "success", "total_users": len(db_ids), "task_id": task.task_id}
+    except Exception as e:
+        logger.error(f"Sheet update error: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/sheet_progress/{task_id}")
+async def get_sheet_progress(task_id: str):
+    return progress_store.get(task_id, {"processed": 0, "error": True, "message": "Task not found"})
 
 
 # Эндпоинт для ручного обнолвления кэша

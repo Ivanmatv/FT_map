@@ -203,6 +203,8 @@
     <div id="adminContainer" class="container" style="display: none;">
         <h1>Админ-панель</h1>
         <div class="form-container">
+
+            <!-- Добавление новых сотрудников -->
             <h2>Добавить новых сотрудников</h2>
             <form id="addUsersForm">
                 <div class="form-group">
@@ -221,6 +223,18 @@
                     <div id="progress" class="progress-fill"></div>
                 </div>
             </div>
+
+            <!-- Добавление отдела и должности для сотрудника -->
+            <div class="form-container">
+                <h2>Обновить данные из Google Sheets</h2>
+                <button class="btn" onclick="startSheetUpdate()">Обновить таблицу</button>
+                <div id="sheetProgressContainer" class="progress-container">
+                    <p id="sheetProgressText" class="progress-text">Обработка: 0%</p>
+                    <div class="progress-bar">
+                        <div id="sheetProgress" class="progress-fill"></div>
+                    </div>
+                </div>
+            </div>
         </div>
         <div id="stats">
             <h2>Статистика посещений</h2>
@@ -231,6 +245,64 @@
     </div>
 
     <script>
+
+        async function startSheetUpdate() {
+            const taskId = 'sheet_task_' + Date.now();
+            const progressContainer = document.getElementById('sheetProgressContainer');
+            const progressBar = document.getElementById('sheetProgress');
+            const progressText = document.getElementById('sheetProgressText');
+
+            try {
+                const response = await fetch('/update_from_sheet', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ task_id: taskId })
+                });
+
+                const result = await response.json();
+                if (result.status === 'success') {
+                    progressContainer.classList.add('active');
+                    checkSheetProgress(taskId, result.total_users);
+                } else {
+                    showSheetMessage(result.message, 'error');
+                }
+            } catch (error) {
+                showSheetMessage('Ошибка при запуске обновления', 'error');
+            }
+        }
+
+        async function checkSheetProgress(taskId, totalUsers) {
+            const progressBar = document.getElementById('sheetProgress');
+            const progressText = document.getElementById('sheetProgressText');
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/sheet_progress/${taskId}`);
+                    const progress = await response.json();
+
+                    const percentage = Math.min((progress.processed / totalUsers) * 100, 100);
+                    progressBar.style.width = percentage + '%';
+                    progressText.textContent = `Обработка: ${Math.round(percentage)}%`;
+
+                    if (progress.status === 'completed' || progress.error) {
+                        clearInterval(interval);
+                        showSheetMessage(progress.message, progress.error ? 'error' : 'success');
+                    }
+                } catch (error) {
+                    clearInterval(interval);
+                    showSheetMessage('Ошибка получения прогресса', 'error');
+                }
+            }, 1000);
+        }
+
+        function showSheetMessage(text, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = text;
+            document.getElementById('sheetProgressContainer').before(messageDiv);
+        }
+        
         function getCookie(name) {
             let cookieValue = null;
             if (document.cookie && document.cookie !== '') {
