@@ -43,18 +43,6 @@
         let myMap;
         let objectManager;
 
-        async function loadInitialMapData() {
-            const response = await fetch('/map_data');
-            const markers = await response.json();
-            markers.forEach(marker => {
-                // Логика добавления метки на карту (например, с использованием Leaflet)
-                addMarkerToMap(marker.city, marker.coordinates, marker.employees);
-            });
-        }
-
-        // Вызов при загрузке страницы
-        document.addEventListener('DOMContentLoaded', loadInitialMapData);
-        
         // Инициализация карты
         ymaps.ready(function () {
             myMap = new ymaps.Map("map", {
@@ -74,13 +62,48 @@
 
             myMap.geoObjects.add(objectManager);
 
+            loadInitialMapData();
+
             // Подключение к WebSocket
             connectWebSocket();
         });
+        
+        function addMarkerToMap(city, coordinates, employees) {
+            if (!objectManager) {
+                console.error('objectManager не инициализирован');
+                return;
+            }
+            const feature = {
+                type: 'Feature',
+                id: city,
+                geometry: {
+                    type: 'Point',
+                    coordinates: coordinates
+                },
+                properties: {
+                    hintContent: city,
+                    balloonContent: generateBalloonContent(city, employees)
+                }
+            };
+            objectManager.add(feature);
+        }
+
+        async function loadInitialMapData() {
+            const response = await fetch('/map_data');
+            const markers = await response.json();
+            markers.forEach(marker => {
+                // Логика добавления метки на карту (например, с использованием Leaflet)
+                addMarkerToMap(marker.city, marker.coordinates, marker.employees);
+            });
+        }
+
+        // Вызов при загрузке страницы
+        document.addEventListener('DOMContentLoaded', loadInitialMapData);
 
         // Подключение к WebSocket
         function connectWebSocket() {
-            const ws = new WebSocket(`ws://${window.location.host}/ws/map`);
+            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+            const ws = new WebSocket(`${protocol}${window.location.host}/ws/map`);
 
             ws.onmessage = function(event) {
                 const data = JSON.parse(event.data);

@@ -228,12 +228,19 @@
             <div class="form-container">
                 <h2>Обновить данные из Google Sheets</h2>
                 <button class="btn" onclick="startSheetUpdate()">Обновить таблицу</button>
+
                 <div id="sheetProgressContainer" class="progress-container">
                     <p id="sheetProgressText" class="progress-text">Обработка: 0%</p>
                     <div class="progress-bar">
                         <div id="sheetProgress" class="progress-fill"></div>
                     </div>
                 </div>
+
+                <!-- Кнопка для обновления кеша -->
+                <h2>Обновить кэш данных карты</h2>
+                <button class="btn" id="refreshCacheBtn">Обновить данные</button>
+                <div id="refreshCacheMessage" class="message" style="display:none;"></div>
+
             </div>
         </div>
         <div id="stats">
@@ -419,6 +426,30 @@
                 messageDiv.className = 'message error';
                 messageDiv.textContent = 'Ошибка при добавлении сотрудников';
                 document.getElementById('progressContainer').before(messageDiv);
+            }
+        });
+
+        document.getElementById('refreshCacheBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('refreshCacheBtn');
+            const messageDiv = document.getElementById('refreshCacheMessage');
+
+            btn.disabled = true;
+            messageDiv.style.display = 'none';
+            messageDiv.textContent = '';
+
+            try {
+                const response = await fetch('/refresh_cache');
+                const data = await response.json();
+
+                messageDiv.textContent = data.message || 'Кэш обновлен';
+                messageDiv.className = 'message success';
+                messageDiv.style.display = 'block';
+            } catch (error) {
+                messageDiv.textContent = 'Ошибка при обновлении кэша';
+                messageDiv.className = 'message error';
+                messageDiv.style.display = 'block';
+            } finally {
+                btn.disabled = false;
             }
         });
 
