@@ -249,9 +249,48 @@
             <p>Общее количество посещений: <span id="total_visits">0</span></p>
         </div>
         <a href="/" class="btn">Вернуться на главную</a>
+
+        <div class="form-container" style="margin-top: 30px; text-align: left;">
+            <h2>Инструкция по использованию админ-панели</h2>
+
+            <h3>Добавление сотрудников</h3>
+            <ul>
+                <li>В разделе <strong>Добавить новых сотрудников</strong>: укажите диапазон ID (например, 100-200).</li>
+                <li>Нажмите <strong>Добавить сотрудников</strong>. Прогресс отобразится в статус-баре.</li>
+            </ul>
+
+            <h3>Обновление данных из Google Sheets (должность и отдел)</h3>
+            <ul>
+                <li>В разделе <strong>Обновить данные из Google Sheets</strong>: нажмите <strong>Обновить таблицу</strong>.</li>
+                <li>Данные из колонок <em>Отдел</em> и <em>Должность</em> обновятся в базе автоматически.</li>
+            </ul>
+
+            <h3>Просмотр статистики</h3>
+            <ul>
+                <li>В разделе <strong>Статистика посещений</strong> отображаются:</li>
+                <ul>
+                    <li>Уникальные посетители.</li>
+                    <li>Общее количество посещений.</li>
+                </ul>
+            </ul>
+
+            <h3>Дополнительные функции</h3>
+            <ul>
+                <li>Ручное обновление данных карты: нажмите кнопку <strong>Обновить данные</strong>.</li>
+                <li>Возврат на главную страницу: нажмите кнопку <strong>Вернуться на главную</strong> в админ-панели.</li>
+            </ul>
+        </div>
+
     </div>
 
     <script>
+
+        document.getElementById('adminPassword').addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                adminLogin();
+            }
+        });
 
         async function startSheetUpdate() {
             const taskId = 'sheet_task_' + Date.now();
