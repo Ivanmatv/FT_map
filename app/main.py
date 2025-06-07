@@ -58,7 +58,7 @@ progress_store = {}
 map_data_cache = {}
 
 # Добавить в настройки
-GOOGLE_SHEET_KEY = "1ou52dcrOtTu_xtscqQp722T2JaW5Uorsfd0EWcbrQ3E"
+GOOGLE_SHEET_KEY = os.getenv("GOOGLE_SHEET_KEY")
 CREDENTIALS_FILE = "credentials.json"  # Файл сервисного аккаунта Google
 
 
