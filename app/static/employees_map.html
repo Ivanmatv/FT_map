@@ -51,6 +51,10 @@
                 console.error('objectManager не инициализирован');
                 return;
             }
+
+            // Создаем кастомную иконку с количеством сотрудников
+            const iconContent = employees.length.toString();
+            
             const feature = {
                 type: 'Feature',
                 id: city,
@@ -59,20 +63,19 @@
                     coordinates: coordinates
                 },
                 properties: {
-                    hintContent: city,
-                    balloonContent: generateBalloonContent(city, employees)
+                    hintContent: `${city} - ${employees.length} сотрудников`,
+                    balloonContent: generateBalloonContent(city, employees),
+                    // Настройки для кастомной иконки
+                    iconContent: iconContent,
+                    preset: 'islands#blueCircleIcon' // или другой подходящий пресет
+                },
+                options: {
+                    preset: 'islands#blueCircleIcon', // Круглая иконка
+                    iconColor: '#1e98ff', // Цвет иконки
+                    hideIconOnBalloonOpen: false,
                 }
             };
 
-            const marker = new ymaps.Placemark(coordinates, {
-                hintContent: city,
-                balloonContent: generateBalloonContent(city, employees)
-            }, {
-                iconLayout: 'default#image',
-                iconImageHref: 'path_to_marker_image.png', // Укажите путь к изображению маркера
-                iconImageSize: [40, 40],  // Увеличьте размеры
-                iconImageOffset: [-20, -20]
-            });
             objectManager.add(feature);
         }
 
@@ -136,7 +139,7 @@
 
         // Генерация содержимого балуна
         function generateBalloonContent(city, employees) {
-            let content = `<h2>${city}</h2><ul>`;
+            let content = `<h2>${city}</h2><p>Количество сотрудников: ${employees.length}</p><ul>`;
             employees.forEach(employee => {
                 let employeeInfo = `<strong>${employee.name}</strong>`;
                 
