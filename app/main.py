@@ -321,7 +321,11 @@ def update_map_data_cache():
     map_data_cache = []
     for city, emp_list in city_employees.items():
         emp_list.sort(key=lambda x: x['name'])
-        coordinates = get_coordinates(city, coordinates_cache)
+        if city == "Москва":
+            coordinates = [55.778487, 37.672379]
+            logger.info(f"Используются заданные координаты для Москвы: {coordinates}")
+        else:
+            coordinates = get_coordinates(city, coordinates_cache)
         if coordinates:
             marker_data = {
                 'city': city,
@@ -363,14 +367,14 @@ def process_sheet_update(db_ids, sheet_data, task_id):
                     user_id
                 ))
                 updated_count += 1
-            
+
             progress_store[task_id]["processed"] = idx + 1
             time.sleep(0.1)
-        
+
         conn.commit()
         progress_store[task_id]["message"] = f"Обновлено {updated_count} записей"
         progress_store[task_id]["status"] = "completed"
-        
+
     except Exception as e:
         progress_store[task_id]["error"] = True
         progress_store[task_id]["message"] = f"Ошибка: {str(e)}"
@@ -526,14 +530,14 @@ async def update_from_sheet(task: SheetTask, background_tasks: BackgroundTasks):
         cursor.execute("SELECT id FROM employees")
         db_ids = [row[0] for row in cursor.fetchall()]
         conn.close()
-        
+
         progress_store[task.task_id] = {
             "processed": 0,
             "total": len(db_ids),
             "message": "",
             "error": False
         }
-        
+
         background_tasks.add_task(process_sheet_update, db_ids, all_records, task.task_id)
         return {"status": "success", "total_users": len(db_ids), "task_id": task.task_id}
     except Exception as e:
