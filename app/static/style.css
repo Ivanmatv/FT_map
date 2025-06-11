@@ -366,3 +366,10 @@ h1 {
         padding: 15px;
     }
 }
+
+@media (max-width: 500px) {
+    #map .ymaps-2-1-78-point {
+        width: 30px;
+        height: 30px;
+    }
+}

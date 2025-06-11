@@ -33,7 +33,9 @@
             objectManager = new ymaps.ObjectManager({
                 clusterize: true, // Включаем кластеризацию
                 gridSize: 32,
-                clusterDisableClickZoom: false
+                clusterDisableClickZoom: false,
+                clusterIconLayout: 'default#pieChart',
+                clusterIconSize: [40, 40],
             });
 
             myMap.geoObjects.add(objectManager);
@@ -61,6 +63,16 @@
                     balloonContent: generateBalloonContent(city, employees)
                 }
             };
+
+            const marker = new ymaps.Placemark(coordinates, {
+                hintContent: city,
+                balloonContent: generateBalloonContent(city, employees)
+            }, {
+                iconLayout: 'default#image',
+                iconImageHref: 'path_to_marker_image.png', // Укажите путь к изображению маркера
+                iconImageSize: [40, 40],  // Увеличьте размеры
+                iconImageOffset: [-20, -20]
+            });
             objectManager.add(feature);
         }
 
