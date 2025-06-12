@@ -38,14 +38,17 @@
                 clusterIconSize: [40, 40],
             });
 
+            // Добавляем objectManager на карту
             myMap.geoObjects.add(objectManager);
 
+            // Загружаем начальные данные карты
             loadInitialMapData();
 
             // Подключение к WebSocket
             connectWebSocket();
         });
-        
+
+        // Обновленный код для addMarkerToMap
         function addMarkerToMap(city, coordinates, employees) {
             if (!objectManager) {
                 console.error('objectManager не инициализирован');
@@ -54,7 +57,7 @@
 
             // Создаем кастомную иконку с количеством сотрудников
             const iconContent = employees.length.toString();
-            
+
             const feature = {
                 type: 'Feature',
                 id: city,
@@ -70,15 +73,17 @@
                     preset: 'islands#blueCircleIcon' // или другой подходящий пресет
                 },
                 options: {
-                    preset: 'islands#blueCircleIcon', // Круглая иконка
+                    iconSize: [80, 80],
                     iconColor: '#1e98ff', // Цвет иконки
                     hideIconOnBalloonOpen: false,
                 }
             };
 
+            // Добавляем метку на карту через ObjectManager
             objectManager.add(feature);
         }
 
+        // Функция загрузки данных с сервера
         async function loadInitialMapData() {
             const response = await fetch('/map_data');
             const markers = await response.json();
@@ -88,10 +93,7 @@
             });
         }
 
-        // Вызов при загрузке страницы
-        document.addEventListener('DOMContentLoaded', loadInitialMapData);
-
-        // Подключение к WebSocket
+        // Функция подключения к WebSocket
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
             const ws = new WebSocket(`${protocol}${window.location.host}/ws/map`);
@@ -183,6 +185,7 @@
                 this.textContent = 'Показать сайдбар';
             }
         });
+
     </script>
 </body>
 </html>
