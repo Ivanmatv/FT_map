@@ -293,6 +293,15 @@ def get_total_visits():
     return total_count
 
 
+# Функция для записи посещения в базу данных
+def record_visit(visitor_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO visits (visitor_id) VALUES (?)", (visitor_id,))
+    conn.commit()
+    conn.close()
+
+
 # Функция для обновления кэша данных карты
 def update_map_data_cache():
     global map_data_cache
@@ -555,3 +564,21 @@ async def get_sheet_progress(task_id: str):
 async def refresh_cache():
     update_map_data_cache()
     return {"message": "Map data cache refreshed"}
+
+
+# Эндпоинт для отслеживания посещений карты
+@app.get("/track_visit")
+async def track_visit(request: Request):
+    # Генерация уникального ID посетителя (можно использовать сессионные cookies или IP-адрес)
+    visitor_id = request.cookies.get("visitor_id")
+    if not visitor_id:
+        visitor_id = secrets.token_urlsafe(16)  # Создаём уникальный идентификатор для посетителя
+        response = HTMLResponse(content="Карта сотрудников", status_code=200)
+        response.set_cookie("visitor_id", visitor_id, max_age=60*60*24)  # Храним ID посетителя в cookie
+    else:
+        response = HTMLResponse(content="Карта сотрудников", status_code=200)
+
+    # Регистрируем посещение
+    record_visit(visitor_id)
+
+    return response

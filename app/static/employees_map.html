@@ -34,7 +34,6 @@
                 clusterize: true, // Включаем кластеризацию
                 gridSize: 32,
                 clusterDisableClickZoom: false,
-                clusterIconLayout: 'default#pieChart',
                 clusterIconSize: [40, 40],
             });
 
@@ -185,6 +184,29 @@
                 this.textContent = 'Показать сайдбар';
             }
         });
+
+        // Функция для отслеживания посещений карты
+        function trackVisit() {
+            fetch('/track_visit', {
+                method: 'GET',
+                credentials: 'same-origin'  // Отправляем куки с запросом
+            })
+            .then(response => {
+                if (response.ok) {
+                    console.log("Посещение карты зафиксировано");
+                } else {
+                    cosole.log("Не удалось зарегистрировать посещение");
+                }
+            })
+            .catch(error => {
+                console.error("Ошибка при отслеживании посещения", error);
+            })
+        }
+
+        // Вызываем trackVisit при загрузке карты
+        window.onload = function() {
+            trackVisit();
+        };
 
     </script>
 </body>

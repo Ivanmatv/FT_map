@@ -217,10 +217,15 @@
                     messageDiv.className = 'message error';
                     messageDiv.textContent = data.message;
                 }
+
+                loadStats();
+
             } catch (error) {
                 messageDiv.className = 'message error';
                 messageDiv.textContent = 'Ошибка сети. Попробуйте снова.';
             }
+
+            loadStats();
         }
 
         async function loadStats() {
@@ -255,6 +260,8 @@
         } else {
             document.getElementById('loginContainer').style.display = 'block';
         }
+
+        loadStats();
 
         document.getElementById('addUsersForm').addEventListener('submit', async function(event) {
             event.preventDefault();

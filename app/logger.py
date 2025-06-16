@@ -16,7 +16,7 @@ def get_logger():
         file_handler = RotatingFileHandler(
             log_file,
             maxBytes=1000000,  # Максимальный размер файла 1 МБ
-            backupCount=5,     # Хранить до 5 резервных копий
+            backupCount=0,     # Хранить до 5 резервных копий
             encoding='utf-8'   # Использовать кодировку UTF-8
         )
         # Устанавливаем формат и уровень для обработчика файлов
