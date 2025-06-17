@@ -154,76 +154,89 @@ def clean_city_name(city):
 
 # Функция для получения данных из базы или API
 def get_or_fetch_user_data(user_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT name, email, city, department, position FROM employees WHERE id = ?", (user_id,))
-    result = cursor.fetchone()
+    # Проверяем наличие пользователя в базе
+    user_data = None
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row  # Для доступа к полям по имени
+            cursor = conn.cursor()
+            cursor.execute("SELECT name, email, city, department, position FROM employees WHERE id = ?", (user_id,))
+            result = cursor.fetchone()
 
-    if result:
-        name, email, city, department, position = result
-        logger.debug(f"User {user_id} found in database: {name}, {email}, {city}, {department}, {position}")
-        return {
-            'user': {
-                'id': user_id,
-                'firstname': name.split()[0],
-                'lastname': ' '.join(name.split()[1:]),
-                'mail': email,
-                'custom_fields': [
-                    {'name': 'Город проживания', 'value': city},
-                    {'name': 'Отдел', 'value': department or ''},
-                    {'name': 'Должность', 'value': position or ''}
-                ]
+        if result:
+            name, email, city, department, position = result
+            logger.debug(f"User {user_id} found in database: {name}, {email}, {city}, {department}, {position}")
+            return {
+                'user': {
+                    'id': user_id,
+                    'firstname': name.split()[0],
+                    'lastname': ' '.join(name.split()[1:]),
+                    'mail': email,
+                    'custom_fields': [
+                        {'name': 'Город проживания', 'value': city},
+                        {'name': 'Отдел', 'value': department or ''},
+                        {'name': 'Должность', 'value': position or ''}
+                    ]
+                }
             }
-        }
+    except sqlite3.Error as e:
+        logger.error(f"Database error when fetching user {user_id}: {e}")
 
-    user_data = get_user_data(user_id)
-    if user_data:
-        user = user_data['user']
-        email = user.get('mail', '')
-        if email.endswith('@futuretoday.ru'):
-            name = f"{user['firstname']} {user['lastname']}"
-            city = "No city"
-            department = None
-            position = None
-            for field in user.get('custom_fields', []):
-                if field['name'] == 'Город проживания':
-                    city = field.get('value') or "No city"
-                elif field['name'] == 'Отдел':
-                    department = field.get('value') or None
-                elif field['name'] == 'Должность':
-                    position = field.get('value') or None
-            city = clean_city_name(city) or "No city"
-            cursor.execute("""
-                INSERT OR REPLACE INTO employees (id, name, email, city, department, position)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (user_id, name, email, city, department, position))
-            conn.commit()
-            logger.info(f"User {user_id} saved to database: {name}, {email}, {city}, {department}, {position}")
-            return user_data
+    # Если не нашли в базе, получаем из API
+    if not user_data:
+        user_data = get_user_data(user_id)
+        if user_data:
+            user = user_data['user']
+            email = user.get('mail', '')
+            if email.endswith('@futuretoday.ru'):
+                name = f"{user['firstname']} {user['lastname']}"
+                city = "No city"
+                department = None
+                position = None
+                for field in user.get('custom_fields', []):
+                    if field['name'] == 'Город проживания':
+                        city = field.get('value') or "No city"
+                    elif field['name'] == 'Отдел':
+                        department = field.get('value') or None
+                    elif field['name'] == 'Должность':
+                        position = field.get('value') or None
+                city = clean_city_name(city) or "No city"
 
-    conn.close()
-    logger.warning(f"User {user_id} not found in API")
-    return None
+                try:
+                    with sqlite3.connect(DB_PATH) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO employees (id, name, email, city, department, position)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (user_id, name, email, city, department, position))
+                        conn.commit()
+                        logger.info(f"User {user_id} saved to database: {name}, {email}, {city}, {department}, {position}")
+                except sqlite3.Error as e:
+                    logger.error(f"Database error when saving user {user_id}: {e}")
+
+    return user_data
 
 
 # Функция для получения всех сотрудников
 def get_all_employees():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name, email, city, department, position FROM employees")
-    employees = [
-        {
-            'id': row[0],
-            'name': row[1],
-            'profile_url': f"{REDMINE_URL}/users/{row[0]}",
-            'city': row[3],
-            'department': row[4] if row[4] and row[4] != 'None' else None,
-            'position': row[5] if row[5] and row[5] != 'None' else None
-        }
-        for row in cursor.fetchall()
-    ]
-    conn.close()
-    logger.info(f"Извлечено {len(employees)} сотрудников из базы данных")
+    employees = []
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name, email, city, department, position FROM employees")
+            for row in cursor.fetchall():
+                employees.append({
+                    'id': row[0],
+                    'name': row[1],
+                    'profile_url': f"{REDMINE_URL}/users/{row[0]}",
+                    'city': row[3],
+                    'department': row[4] if row[4] and row[4] != 'None' else None,
+                    'position': row[5] if row[5] and row[5] != 'None' else None
+                })
+            logger.info(f"Извлечено {len(employees)} сотрудников из базы данных")
+    except sqlite3.Error as e:
+        logger.error(f"Database error when fetching all employees: {e}")
     return employees
 
 
@@ -275,31 +288,39 @@ def process_users(start_id: int, end_id: int, task_id: str):
 
 # Функция подсчёта уникальных посетителей
 def get_unique_visitors():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(DISTINCT visitor_id) FROM visits")
-    unique_count = cursor.fetchone()[0]
-    conn.close()
-    return unique_count
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(DISTINCT visitor_id) FROM visits")
+            unique_count = cursor.fetchone()[0]
+            return unique_count
+    except sqlite3.Error as e:
+        logger.error(f"Database error when counting unique visitors: {e}")
+        return 0
 
 
 # Функция подсчёта посетителей
 def get_total_visits():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM visits")
-    total_count = cursor.fetchone()[0]
-    conn.close()
-    return total_count
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM visits")
+            total_count = cursor.fetchone()[0]
+            return total_count
+    except sqlite3.Error as e:
+        logger.error(f"Database error when counting total visits: {e}")
+        return 0
 
 
 # Функция для записи посещения в базу данных
 def record_visit(visitor_id):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO visits (visitor_id) VALUES (?)", (visitor_id,))
-    conn.commit()
-    conn.close()
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO visits (visitor_id) VALUES (?)", (visitor_id,))
+            conn.commit()
+    except sqlite3.OperationalError as e:
+        logger.error(f"Ошибка записи в базу данных: {e}")
 
 
 # Функция для обновления кэша данных карты
@@ -358,9 +379,9 @@ async def periodic_cache_update():
 
 def process_sheet_update(db_ids, sheet_data, task_id):
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
         updated_count = 0
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
 
         for idx, user_id in enumerate(db_ids):
             sheet_row = next((row for row in sheet_data if row["#"] == user_id), None)
@@ -389,7 +410,6 @@ def process_sheet_update(db_ids, sheet_data, task_id):
         progress_store[task_id]["message"] = f"Ошибка: {str(e)}"
         logger.error(f"Sheet update failed: {str(e)}")
     finally:
-        conn.close()
         time.sleep(5)
         progress_store.pop(task_id, None)
 
