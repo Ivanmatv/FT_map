@@ -17,7 +17,8 @@
 
     <script>
         let myMap;
-        let objectManager;
+        let geoObjects = [];
+        let clusterer;
 
         // Инициализация карты
         ymaps.ready(function () {
@@ -26,24 +27,29 @@
                 zoom: 4,
                 controls: ['zoomControl']
             }, {
-                mapType: 'yandex#map' // Карта без политических границ
+                mapType: 'yandex#map'
             });
 
-            // Создаем ObjectManager для управления метками
-            objectManager = new ymaps.ObjectManager({
-                clusterize: true, // Включаем кластеризацию
+            // Создаем кластерер
+            clusterer = new ymaps.Clusterer({
                 gridSize: 32,
                 clusterDisableClickZoom: false,
-                clusterIconSize: [40, 40],
+                clusterIconSize: [40, 40]
             });
 
-            // Добавляем objectManager на карту
-            myMap.geoObjects.add(objectManager);
+            // Переопределяем функцию создания кластера
+            clusterer.createCluster = function (center, geoObjects) {
+                const weights = geoObjects.map(object => object.properties.get('data').count);
+                const sum = weights.reduce((prev, curr) => prev + curr, 0);
+                var clusterPlacemark = ymaps.Clusterer.prototype.createCluster.call(this, center, geoObjects);
+                clusterPlacemark.properties.set('iconContent', sum);
+                return clusterPlacemark;
+            };
 
-            // Загружаем начальные данные карты
-            loadInitialMapData();
+            // Добавляем кластерер на карту
+            myMap.geoObjects.add(clusterer);
 
-            // Подключение к WebSocket
+            // Только WebSocket (убрано двойное добавление из loadInitialMapData)
             connectWebSocket();
         });
 
@@ -108,23 +114,30 @@
                     return;
                 }
 
-                // Добавляем метку на карту
-                const feature = {
-                    type: 'Feature',
-                    id: data.city,
-                    geometry: {
-                        type: 'Point',
-                        coordinates: data.coordinates
+                // создаем новую метку и добавляем в кластерер
+                const placemark = new ymaps.Placemark(
+                    data.coordinates,
+                    {
+                        hintContent: `${data.city} - ${data.employees.length} сотрудников`,
+                        balloonContent: generateBalloonContent(data.city, data.employees),
+                        iconContent: data.employees.length,
+                        data: {count: data.employees.length}
                     },
-                    properties: {
-                        hintContent: data.city,
-                        balloonContent: generateBalloonContent(data.city, data.employees)
+                    {
+                        preset: 'islands#blueCircleIcon'
                     }
-                };
-                objectManager.add(feature);
+                );
+                // Предотвращаем дублирование: проверяем по координатам
+                const exists = clusterer.getGeoObjects().some(obj => {
+                    const coords = obj.geometry.getCoordinates();
+                    return coords[0] === data.coordinates[0] && coords[1] === data.coordinates[1];
+                });
+                if (!exists) {
+                    clusterer.add(placemark);
+                }
 
-                // Обновляем центр карты после добавления первой метки
-                if (objectManager.objects.getLength() === 1) {
+                // обновляем центр карты после первой метки
+                if (clusterer.getGeoObjects().length === 1) {
                     myMap.setCenter(data.coordinates, 6);
                 }
             };

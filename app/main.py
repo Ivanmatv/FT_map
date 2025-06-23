@@ -63,6 +63,9 @@ CREDENTIALS_FILE = "credentials.json"  # Файл сервисного акка�
 
 
 def get_google_sheet():
+    """
+    Авторизация через сервисный аккаунт и получение доступа к Google Sheets.
+    """
     scope = ['https://spreadsheets.google.com/feeds',
              'https://www.googleapis.com/auth/drive']
     creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
@@ -445,6 +448,7 @@ async def login(request: Request):
     return {"status": "error", "message": "Неверный пароль"}
 
 
+# Эндпоинт проверки токена авторизации
 @app.post("/check_token")
 async def check_token(request: Request):
     data = await request.json()
@@ -549,6 +553,7 @@ async def get_map():
     return HTMLResponse(content=html_content)
 
 
+# Эндпоинт для карты
 @app.post("/update_from_sheet")
 async def update_from_sheet(task: SheetTask, background_tasks: BackgroundTasks):
     try:
@@ -574,6 +579,7 @@ async def update_from_sheet(task: SheetTask, background_tasks: BackgroundTasks):
         return {"status": "error", "message": str(e)}
 
 
+# Эндпоинт обновления статусбара
 @app.get("/sheet_progress/{task_id}")
 async def get_sheet_progress(task_id: str):
     return progress_store.get(task_id, {"processed": 0, "error": True, "message": "Task not found"})
