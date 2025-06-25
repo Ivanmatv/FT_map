@@ -1,6 +1,8 @@
 import os
 import secrets
 import asyncio
+import json
+import redis
 
 from fastapi import APIRouter, WebSocket, Request
 from fastapi.responses import HTMLResponse
@@ -8,17 +10,22 @@ from fastapi.responses import HTMLResponse
 from ..services import update_map_data_cache
 from ..database import record_visit
 from ..config import logger
+from ..state import map_data_cache
 
 
 router = APIRouter()
 
-# Глобальный кэш для данных карты
-map_data_cache = {}
+# Инициализация Redis-клиента
+redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
 
 @router.get("/map_data")
 async def get_map_data():
-    return map_data_cache
+    """Эндпоинт получения данных карты"""
+    cached_data = redis_client.get("map_data_cache")
+    data = json.loads(cached_data) if cached_data else []
+    logger.info(f"map_data_cache in /map_data: {data}")
+    return data
 
 
 @router.websocket("/ws/map")
@@ -26,7 +33,9 @@ async def websocket_map(websocket: WebSocket):
     """Эндпоинт передачи данных на карту"""
     await websocket.accept()
     try:
-        for marker_data in map_data_cache:
+        cached_data = redis_client.get("map_data_cache")
+        data = json.loads(cached_data) if cached_data else []
+        for marker_data in data:
             await websocket.send_json(marker_data)
             logger.info(f"Отправлены кэшированные данные для города {marker_data['city']}")
             await asyncio.sleep(0.005)

@@ -5,12 +5,18 @@ from .logger import get_logger
 load_dotenv()
 
 REDMINE_URL = "https://tasks.fut.ru"
+
 API_KEY = os.getenv("API_KEY")
+
 PASSWORD = os.getenv("PASSWORD")
+
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
 DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
+
 GOOGLE_SHEET_KEY = os.getenv("GOOGLE_SHEET_KEY")
-CREDENTIALS_FILE = os.path.join(os.path.dirname(__file__), "credentials.json")
+
+CREDENTIALS_FILE = "credentials.json"
 
 logger = get_logger()
 

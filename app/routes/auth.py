@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Request
-from ..config import PASSWORD
 import secrets
 
-router = APIRouter()
+from fastapi import APIRouter, Request
 
-# Хранилище токена авторизации
-token_store = {}
+from ..config import PASSWORD
+from ..state import token_store
+
+router = APIRouter()
 
 
 @router.post("/login")

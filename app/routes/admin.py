@@ -1,23 +1,15 @@
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse
 from ..models import LoginRequest, TokenRequest, UserRange, SheetTask
-from ..services import process_users, process_sheet_update, get_google_sheet
+from ..services import process_users, process_sheet_update, get_google_sheet, update_map_data_cache
 from ..database import get_unique_visitors, get_total_visits, DB_PATH
 from ..config import ADMIN_PASSWORD, logger
+from ..state import admin_token_store, progress_store
 import secrets
 import os
 import sqlite3
 
 router = APIRouter()
-
-# Хранилище прогресса для задач
-progress_store = {}
-
-# Хранилище токена авторизации
-token_store = {}
-
-# Хранилище токенов для админ-панели
-admin_token_store = {}
 
 
 @router.get("/admin_stats")

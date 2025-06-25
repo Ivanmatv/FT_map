@@ -1,21 +1,20 @@
+import json
 import requests
 import geocoder
 import time
 import asyncio
 import gspread
 import sqlite3
+import redis
 
 from oauth2client.service_account import ServiceAccountCredentials
 
 from .config import REDMINE_URL, API_KEY, GOOGLE_SHEET_KEY, CREDENTIALS_FILE, logger
 from .database import get_or_fetch_user_data, get_all_employees
+from .state import map_data_cache, progress_store
 
-
-# Хранилище прогресса для задач
-progress_store = {}
-
-# Глобальный кэш для данных карты
-map_data_cache = {}
+# Инициализация Redis-клиента
+redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
 
 def get_user_data(user_id: int) -> dict:
@@ -77,7 +76,7 @@ def process_users(start_id: int, end_id: int, task_id: str):
         for user_id in range(start_id, end_id + 1):
             user_data = get_or_fetch_user_data(user_id)
             # отбираем тольок пользователей по корпоративной почте
-            if user_data and user_data['user']['mail'].endswith('@futuretoday.ru'):    
+            if user_data and user_data['user'].get('mail') and user_data['user']['mail'].endswith('@futuretoday.ru'):    
                 added_count += 1
             progress_store[task_id]['progress'] += 1
             progress_store[task_id]['added_count'] = added_count
@@ -142,14 +141,17 @@ def update_map_data_cache():
         else:
             logger.warning(f"Координаты для города {city} не найдены")
 
+    redis_client.set("map_data_cache", json.dumps(map_data_cache))
+    # logger.debug(f"map_data_cache: {map_data_cache}")
     logger.info("Кэш данных карты успешно обновлён")
 
 
-async def periodic_cache_update():
-    """Автоматическое обновление данных на карте"""
-    while True:
-        update_map_data_cache()
-        await asyncio.sleep(3600)  # Обновление каждый час
+# Пока не нужен
+# async def periodic_cache_update():            
+#     """Автоматическое обновление данных на карте"""
+#     while True:
+#         update_map_data_cache()
+#         await asyncio.sleep(3600)  # Обновление каждый час
 
 
 def get_google_sheet():
@@ -190,6 +192,7 @@ def process_sheet_update(db_ids, sheet_data, task_id):
         conn.commit()
         progress_store[task_id]["message"] = f"Обновлено {updated_count} записей"
         progress_store[task_id]["status"] = "completed"
+        logger.info(f"Обновлено {updated_count} записей")
 
     except Exception as e:
         progress_store[task_id]["error"] = True

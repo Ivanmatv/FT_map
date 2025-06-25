@@ -34,7 +34,7 @@
             clusterer = new ymaps.Clusterer({
                 gridSize: 32,
                 clusterDisableClickZoom: false,
-                clusterIconSize: [40, 40]
+                clusterIconSize: [100, 100]
             });
 
             // Переопределяем функцию создания кластера
@@ -75,10 +75,10 @@
                     balloonContent: generateBalloonContent(city, employees),
                     // Настройки для кастомной иконки
                     iconContent: iconContent,
-                    preset: 'islands#blueCircleIcon' // или другой подходящий пресет
+                    
                 },
                 options: {
-                    iconSize: [80, 80],
+                    iconSize: [100, 100],
                     iconColor: '#1e98ff', // Цвет иконки
                     hideIconOnBalloonOpen: false,
                 }
