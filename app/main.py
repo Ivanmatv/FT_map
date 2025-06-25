@@ -268,7 +268,8 @@ def process_users(start_id: int, end_id: int, task_id: str):
     try:
         for user_id in range(start_id, end_id + 1):
             user_data = get_or_fetch_user_data(user_id)
-            if user_data and user_data['user']['mail'].endswith('@futuretoday.ru'):
+            # отбираем тольок пользователей по корпоративной почт
+            if user_data and user_data['user'].get('mail') and user_data['user']['mail'].endswith('@futuretoday.ru'):
                 added_count += 1
             progress_store[task_id]['progress'] += 1
             progress_store[task_id]['added_count'] = added_count
