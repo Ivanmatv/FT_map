@@ -48,6 +48,7 @@
             <!-- Добавление отдела и должности для сотрудника -->
             <div class="form-container">
                 <h2>Обновить данные из Google Sheets</h2>
+                <h3>(добавить отдел и должность сотрудника)</h3>
                 <button class="btn" onclick="startSheetUpdate()">Обновить таблицу</button>
 
                 <div id="sheetProgressContainer" class="progress-container">
@@ -59,15 +60,29 @@
 
                 <!-- Кнопка для обновления кеша -->
                 <h2>Обновить кэш данных карты</h2>
+                <h3>(для ручного обновления данных меток и сотрудников на карте)</h3>
                 <button class="btn" id="refreshCacheBtn">Обновить данные</button>
                 <div id="refreshCacheMessage" class="message" style="display:none;"></div>
 
             </div>
         </div>
-        <div id="stats">
+        <!-- Получение статистики посещений -->
+        <form id="statsForm">
             <h2>Статистика посещений</h2>
+            <div class="form-group">
+                <label for="date_start">Начальная дата:</label>
+                <input type="date" id="date_start" name="date_start" required>
+            </div>
+            <div class="form-group">
+                <label for="date_end">Конечная дата:</label>
+                <input type="date" id="date_end" name="date_end" required>
+            </div>
+
+            <button type="submit" class="btn">Показать статистику</button>
+        </form>
+        <div id="statsResult">
             <p>Уникальных посетителей: <span id="unique_visitors">0</span></p>
-            <p>Общее количество посещений: <span id="total_visits">0</span></p>
+            <p>Всего посещений: <span id="total_visits">0</span></p>
         </div>
         <a href="/" class="btn">Вернуться на главную</a>
 
@@ -76,11 +91,11 @@
 
             <h3>Добавление сотрудников</h3>
             <ul>
-                <li>В разделе <strong>Добавить новых сотрудников</strong>: укажите диапазон ID (например, 100-200).</li>
+                <li>В разделе <strong>Добавить новых сотрудников</strong>: укажите диапазон ID (например, от 100 до 200).</li>
                 <li>Нажмите <strong>Добавить сотрудников</strong>. Прогресс отобразится в статус-баре.</li>
             </ul>
 
-            <h3>Обновление данных из Google Sheets (должность и отдел)</h3>
+            <h3>Обновление данных из Google Sheets (добавить должность и отдел для сотрудника)</h3>
             <ul>
                 <li>В разделе <strong>Обновить данные из Google Sheets</strong>: нажмите <strong>Обновить таблицу</strong>.</li>
                 <li>Данные из колонок <em>Отдел</em> и <em>Должность</em> обновятся в базе автоматически.</li>
@@ -90,6 +105,7 @@
             <ul>
                 <li>В разделе <strong>Статистика посещений</strong> отображаются:</li>
                 <ul>
+                    <li>Выберите даты, за какой промежуток времени хотите посмотреть посетителей карты</li>
                     <li>Уникальные посетители.</li>
                     <li>Общее количество посещений.</li>
                 </ul>
@@ -113,6 +129,7 @@
             }
         });
 
+        // Обновление отдела и должности в таблицы из гугл таблицы
         async function startSheetUpdate() {
             const taskId = 'sheet_task_' + Date.now();
             const progressContainer = document.getElementById('sheetProgressContainer');
@@ -140,6 +157,7 @@
             }
         }
 
+        // Обновление статус бара
         async function checkSheetProgress(taskId, totalUsers) {
             const progressBar = document.getElementById('sheetProgress');
             const progressText = document.getElementById('sheetProgressText');
@@ -163,13 +181,15 @@
             }, 1000);
         }
 
+        // Сообщени об обработке
         function showSheetMessage(text, type) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${type}`;
             messageDiv.textContent = text;
             document.getElementById('sheetProgressContainer').before(messageDiv);
         }
-        
+
+        // Кэш 
         function getCookie(name) {
             let cookieValue = null;
             if (document.cookie && document.cookie !== '') {
@@ -184,7 +204,7 @@
             }
             return cookieValue;
         }
-
+        // Кэш
         function setCookie(name, value, days) {
             let expires = "";
             if (days) {
@@ -195,6 +215,7 @@
             document.cookie = name + "=" + (value || "") + expires + "; path=/";
         }
 
+        // Авторизация на админ панели
         async function adminLogin() {
             const password = document.getElementById('adminPassword').value;
             const messageDiv = document.getElementById('message');
@@ -228,11 +249,35 @@
             loadStats();
         }
 
-        async function loadStats() {
-            const response = await fetch('/admin_stats');
-            const data = await response.json();
-            document.getElementById('unique_visitors').textContent = data.unique_visitors;
-            document.getElementById('total_visits').textContent = data.total_visits;
+        document.getElementById('statsForm').addEventListener('submit', async function(event) {
+            event.preventDefault(); // Отменяем стандартную отправку формы
+
+            const dateStart = document.getElementById('date_start').value;
+            const dateEnd = document.getElementById('date_end').value;
+
+            if (!dateStart || !dateEnd) {
+                alert("Выберите обе даты!");
+                return
+            }
+
+            if (new Date(dateStart) > new Date(dateEnd)) {
+                alert("Начальная дата не может быть позже конечной!");
+                return;
+            }
+
+            await loadStats(dateStart, dateEnd) // Обновляем статистику
+        });
+
+        // Получение статистики по посещениям карты
+        async function loadStats(dateStart, dateEnd) {
+            try {
+                const response = await fetch(`/admin_stats?date_start=${dateStart}&date_end=${dateEnd}`);
+                const data = await response.json();
+                document.getElementById('unique_visitors').textContent = data.unique_visitors;
+                document.getElementById('total_visits').textContent = data.total_visits;
+            } catch (error) {
+                console.error("Ошибка загрузки статистики:", error);            
+            }
         }
 
         // Проверка cookie при загрузке страницы
@@ -263,6 +308,7 @@
 
         loadStats();
 
+        // Добавление новых сотрудников
         document.getElementById('addUsersForm').addEventListener('submit', async function(event) {
             event.preventDefault();
             const startId = document.getElementById('startId').value;
@@ -295,7 +341,8 @@
                 document.getElementById('progressContainer').before(messageDiv);
             }
         });
-
+        
+        // Обновление кэша для карты
         document.getElementById('refreshCacheBtn').addEventListener('click', async () => {
             const btn = document.getElementById('refreshCacheBtn');
             const messageDiv = document.getElementById('refreshCacheMessage');
