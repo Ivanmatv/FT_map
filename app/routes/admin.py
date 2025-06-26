@@ -2,8 +2,8 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse
 from ..models import LoginRequest, TokenRequest, UserRange, SheetTask
 from ..services import process_users, process_sheet_update, get_google_sheet, update_map_data_cache
-from ..database import get_unique_visitors, get_total_visits, DB_PATH
-from ..config import ADMIN_PASSWORD, logger
+from ..database import get_unique_visitors, get_total_visits
+from ..config import ADMIN_PASSWORD, logger, DB_PATH
 from ..state import admin_token_store, progress_store
 import secrets
 import os
@@ -13,10 +13,10 @@ router = APIRouter()
 
 
 @router.get("/admin_stats")
-async def get_admin_stats():
-    """Эндпоинт количества посетителей"""
-    unique_visitors = get_unique_visitors()
-    total_visits = get_total_visits()
+async def get_admin_stats(date_start: str, date_end: str):
+    """Эндпоинт статистики посещений"""
+    unique_visitors = get_unique_visitors(date_start, date_end)
+    total_visits = get_total_visits(date_start, date_end)
     return {"unique_visitors": unique_visitors, "total_visits": total_visits}
 
 

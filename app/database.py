@@ -116,12 +116,24 @@ def get_all_employees():
     return employees
 
 
-def get_unique_visitors():
+def get_unique_visitors(date_start, date_end):
     """Получение уникальных посетителей из базы данных"""
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(DISTINCT visitor_id) FROM visits")
+            # Если даты одинаковые, фильтруем по точной дате
+            if date_start == date_end:
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT visitor_id)
+                    FROM visits
+                    WHERE DATE(visit_time) = ?
+                """, (date_start,))
+            else:
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT visitor_id)
+                    FROM visits
+                    WHERE visit_time BETWEEN ? AND ?
+                """, (date_start, date_end))
             unique_count = cursor.fetchone()[0]
             return unique_count
     except sqlite3.Error as e:
@@ -129,12 +141,24 @@ def get_unique_visitors():
         return 0
 
 
-def get_total_visits():
+def get_total_visits(date_start, date_end):
     """Получение всех посетителей из базы данных"""
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM visits")
+            # Если даты одинаковые, фильтруем по точной дате
+            if date_start == date_end:
+                cursor.execute("""
+                    SELECT COUNT(*)
+                    FROM visits
+                    WHERE DATE(visit_time) = ?
+                """, (date_start,))
+            else:
+                cursor.execute("""
+                    SELECT COUNT(*)
+                    FROM visits
+                    WHERE visit_time BETWEEN ? AND ?
+                """, (date_start, date_end))
             total_count = cursor.fetchone()[0]
             return total_count
     except sqlite3.Error as e:

@@ -55,8 +55,10 @@ def get_coordinates(city: str, cache: dict) -> list:
     if not city or city == "No city":
         logger.warning(f"Город '{city}' пропущен")
         return None
+    # Если координаты уже в кэше, возвращаем их
     if city in cache:
         return cache[city]
+    # Запрос к геокодеру
     g = geocoder.osm(city, headers={'User-Agent': 'FT_map/1.0 (imatveev@futuretoday.ru)'})
     if g.ok:
         cache[city] = g.latlng
