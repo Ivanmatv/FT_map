@@ -12,7 +12,7 @@ PASSWORD = os.getenv("PASSWORD")
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
+DB_PATH = "users.db"
 
 GOOGLE_SHEET_KEY = os.getenv("GOOGLE_SHEET_KEY")
 
