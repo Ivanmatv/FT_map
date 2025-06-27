@@ -18,7 +18,7 @@ GOOGLE_SHEET_KEY = os.getenv("GOOGLE_SHEET_KEY")
 
 CREDENTIALS_FILE = "credentials.json"
 
-REDIS_HOST = 'map.fut.ru'
+REDIS_HOST = "localhost"
 
 REDIS_PORT = 6379
 

@@ -5,10 +5,49 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Карта сотрудников</title>
     <script src="https://api-maps.yandex.ru/2.1/?apikey=ec42c457-c28e-4138-a645-905b64b63771&lang=ru_RU"></script>
-    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        /* Добавлены локальные стили вместо внешнего CSS */
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+        
+        #sidebar {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            width: 300px;
+            max-height: 80vh;
+            overflow-y: auto;
+            background: white;
+            padding: 10px;
+            border: 1px solid #ccc;
+            display: none;
+            z-index: 1000;
+        }
+        
+        #toggleSidebar {
+            position: fixed;
+            top: 10px;
+            right: 320px;
+            padding: 5px 10px;
+            cursor: pointer;
+            background: white;
+            border: 1px solid #ccc;
+            z-index: 1000;
+        }
+    </style>
 </head>
 <body>
-    <button id="toggleSidebar">Показать сайдбар</button>
+    
     <div id="sidebar">
         <h2>Сотрудники</h2>
         <div id="employeeList"></div>

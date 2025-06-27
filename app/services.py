@@ -8,12 +8,12 @@ import redis
 
 from oauth2client.service_account import ServiceAccountCredentials
 
-from .config import REDMINE_URL, API_KEY, GOOGLE_SHEET_KEY, CREDENTIALS_FILE, logger, REDIS_HOST, REDIS_PORT
+from .config import REDMINE_URL, API_KEY, GOOGLE_SHEET_KEY, CREDENTIALS_FILE, logger, REDIS_HOST
 from .database import get_or_fetch_user_data, get_all_employees
 from .state import map_data_cache, progress_store
 
 # Инициализация Redis-клиента
-redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True)
+redis_client = redis.Redis(host=REDIS_HOST, db=0, decode_responses=True)
 
 
 def get_user_data(user_id: int) -> dict:

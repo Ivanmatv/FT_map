@@ -8,16 +8,16 @@
 
 body {
     font-family: 'Roboto', sans-serif;
-    background: linear-gradient(135deg, #6e8efb, #a777e3);
     color: #333;
     min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
     text-align: center;
-    padding: 20px;
+    padding: 0;
+    margin: 0;
+    background: none; /* Remove background gradient */
 }
-
 .container {
     background: rgba(255, 255, 255, 0.95);
     border-radius: 15px;
@@ -192,18 +192,6 @@ p {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-}
-
-body {
-    font-family: 'Roboto', sans-serif;
-    background: linear-gradient(135deg, #6e8efb, #a777e3);
-    color: #333;
-    min-height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    text-align: center;
-    padding: 20px;
 }
 
 .container {
