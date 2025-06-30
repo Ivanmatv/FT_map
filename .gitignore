@@ -173,5 +173,5 @@ credentials.json
 
 # база данных
 users.db
-/user.db 
+/users.db 
 app/users.db
