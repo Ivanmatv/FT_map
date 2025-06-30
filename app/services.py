@@ -6,11 +6,12 @@ import gspread
 import sqlite3
 import redis
 
+from typing import List, Dict
 from oauth2client.service_account import ServiceAccountCredentials
 
 from .config import REDMINE_URL, API_KEY, GOOGLE_SHEET_KEY, CREDENTIALS_FILE, logger, REDIS_HOST
 from .database import get_or_fetch_user_data, get_all_employees
-from .state import map_data_cache, progress_store
+from .state import map_data_cache, progress_store, sheets_progress_store
 
 # Инициализация Redis-клиента
 redis_client = redis.Redis(host=REDIS_HOST, db=0, decode_responses=True)
@@ -68,7 +69,7 @@ def get_coordinates(city: str, cache: dict) -> list:
 
 
 def process_users(start_id: int, end_id: int, task_id: str):
-    """Филтрация пользователй FT"""
+    """Фильтрация пользователй FT"""
     logger.info(f"Starting background task {task_id} for range {start_id}-{end_id}")
     progress_store[task_id] = {'progress': 0, 'error': None, 'message': None, 'added_count': 0}
     added_count = 0
@@ -164,7 +165,7 @@ def get_google_sheet():
     return client.open_by_key(GOOGLE_SHEET_KEY).sheet1
 
 
-def process_sheet_update(db_ids, sheet_data, task_id):
+def process_sheet_update(db_ids: List[int], sheet_data: List[Dict[str, str]], task_id: str):
     """Обновление данных сотрудников (должность, отдел)"""
     try:
         from .database import DB_PATH
@@ -187,17 +188,26 @@ def process_sheet_update(db_ids, sheet_data, task_id):
                 ))
                 updated_count += 1
 
-            progress_store[task_id]["processed"] = idx + 1
+            # Улучшенное обновление прогресса в Redis
+            progress_data = json.loads(redis_client.get(task_id) or '{}')
+            progress_data["processed"] = idx + 1
+            progress_data["updated_count"] = updated_count
+            redis_client.set(task_id, json.dumps(progress_data))
+
             time.sleep(0.1)
 
         conn.commit()
-        progress_store[task_id]["message"] = f"Обновлено {updated_count} записей"
-        progress_store[task_id]["status"] = "completed"
+        progress_data = json.loads(redis_client.get(task_id) or '{}')
+        progress_data["message"] = f"Обновлено {updated_count} записей"
+        progress_data["status"] = "completed"
+        redis_client.set(task_id, json.dumps(progress_data))
         logger.info(f"Обновлено {updated_count} записей")
 
     except Exception as e:
-        progress_store[task_id]["error"] = True
-        progress_store[task_id]["message"] = f"Ошибка: {str(e)}"
+        progress_data = json.loads(redis_client.get(task_id) or '{}')
+        progress_data["error"] = True
+        progress_data["message"] = f"Ошибка: {str(e)}"
+        redis_client.set(task_id, json.dumps(progress_data))
         logger.error(f"Sheet update failed: {str(e)}")
     finally:
         time.sleep(5)

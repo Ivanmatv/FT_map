@@ -170,3 +170,8 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 credentials.json
+
+# база данных
+users.db
+/user.db 
+app/users.db

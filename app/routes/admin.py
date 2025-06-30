@@ -1,15 +1,23 @@
+import secrets
+import os
+import sqlite3
+import json
+import redis
+
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse
+
 from ..models import LoginRequest, TokenRequest, UserRange, SheetTask
 from ..services import process_users, process_sheet_update, get_google_sheet, update_map_data_cache
 from ..database import get_unique_visitors, get_total_visits
 from ..config import ADMIN_PASSWORD, logger, DB_PATH
 from ..state import admin_token_store, progress_store
-import secrets
-import os
-import sqlite3
+
 
 router = APIRouter()
+
+# Инициализация Redis-клиента
+redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
 
 @router.get("/admin_stats")
@@ -72,7 +80,7 @@ async def add_users(user_range: UserRange, background_tasks: BackgroundTasks):
 
 @router.get("/progress/{task_id}")
 async def get_progress(task_id: str):
-    """Эндпоинт статус-бара"""
+    """Получение прогресса поиска сотрудников"""
     progress = progress_store.get(task_id, {'progress': 0, 'error': None, 'message': None, 'added_count': 0})
     logger.debug(f"Progress requested for task {task_id}: {progress}")
     return progress
@@ -90,12 +98,12 @@ async def update_from_sheet(task: SheetTask, background_tasks: BackgroundTasks):
         db_ids = [row[0] for row in cursor.fetchall()]
         conn.close()
 
-        progress_store[task.task_id] = {
+        redis_client.set(task.task_id, json.dumps({
             "processed": 0,
             "total": len(db_ids),
             "message": "",
             "error": False
-        }
+        }))
 
         background_tasks.add_task(process_sheet_update, db_ids, all_records, task.task_id)
         return {"status": "success", "total_users": len(db_ids), "task_id": task.task_id}
@@ -106,7 +114,10 @@ async def update_from_sheet(task: SheetTask, background_tasks: BackgroundTasks):
 
 @router.get("/sheet_progress/{task_id}")
 async def get_sheet_progress(task_id: str):
-    return progress_store.get(task_id, {"processed": 0, "error": True, "message": "Task not found"})
+    """Получение прогресса по обновлению данных из Google Sheets"""
+    progress = json.loads(redis_client.get(task_id) or '{"processed": 0, "error": True, "message": "Task not found"}')
+    logger.debug(f"Sheet progress requested for task {task_id}: {progress}")
+    return progress
 
 
 @router.get("/refresh_cache")

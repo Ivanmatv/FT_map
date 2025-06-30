@@ -8,16 +8,16 @@
 
 body {
     font-family: 'Roboto', sans-serif;
+    background: linear-gradient(135deg, #6e8efb, #a777e3);
     color: #333;
     min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
     text-align: center;
-    padding: 0;
-    margin: 0;
-    background: none; /* Remove background gradient */
+    padding: 20px;
 }
+
 .container {
     background: rgba(255, 255, 255, 0.95);
     border-radius: 15px;
