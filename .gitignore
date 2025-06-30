@@ -175,3 +175,5 @@ credentials.json
 users.db
 /users.db 
 app/users.db
+# Игнорировать все файлы .db
+*.db
